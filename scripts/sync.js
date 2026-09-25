@@ -153,12 +153,12 @@ async function runSync() {
     // 1. SKU Catalog
     console.log("\n[1/4] Syncing SKU-Cat-Name...");
     const skuRows = await fetchValues("'SKU-Cat-Name'!A2:H1200");
-    const products = [];
+    const productMap = new Map();
     for (let i = 1; i < skuRows.length; i++) {
       const row = skuRows[i];
       const sku = (row[0] || '').trim();
       if (!sku || sku.includes("कुल") || sku.toLowerCase().includes("total")) continue;
-      products.push({
+      productMap.set(sku, {
         sku_code: sku,
         old_sku_code: (row[1] || '').trim() || null,
         product_name: (row[2] || '').trim() || null,
@@ -169,10 +169,11 @@ async function runSync() {
         updated_at: new Date().toISOString()
       });
     }
+    const products = Array.from(productMap.values());
     if (products.length > 0) {
       const { error } = await supabase.from('products').upsert(products, { onConflict: 'sku_code' });
       if (error) console.error("Error upserting products:", error.message);
-      else console.log(`✓ Upserted ${products.length} products from SKU-Cat-Name`);
+      else console.log(`✓ Upserted ${products.length} unique products from SKU-Cat-Name`);
     }
 
     // 2. Stock Sheet

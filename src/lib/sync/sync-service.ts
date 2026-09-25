@@ -88,7 +88,7 @@ export async function syncSKUCatalog(): Promise<SyncResult> {
     }
 
     // Row 0 is headers: new-sku code, OLD _SKU_ Code, PRODUCT NAME, TYPE, Brand, category, Required_ Qty, Current _Stock
-    const productsToUpsert = [];
+    const productMap = new Map<string, any>();
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
       const skuCode = (row[0] || "").trim();
@@ -96,7 +96,7 @@ export async function syncSKUCatalog(): Promise<SyncResult> {
         continue;
       }
 
-      productsToUpsert.push({
+      productMap.set(skuCode, {
         sku_code: skuCode,
         old_sku_code: (row[1] || "").trim() || null,
         product_name: (row[2] || "").trim() || null,
@@ -108,6 +108,7 @@ export async function syncSKUCatalog(): Promise<SyncResult> {
       });
     }
 
+    const productsToUpsert = Array.from(productMap.values());
     if (productsToUpsert.length > 0) {
       const { error } = await supabaseAdmin
         .from("products")
