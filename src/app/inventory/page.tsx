@@ -1,7 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { StatsCards } from "@/components/dashboard/StatsCards";
-import { StockTable } from "@/components/dashboard/StockTable";
-import { StockChart } from "@/components/dashboard/StockChart";
+import { InventoryClientDashboard } from "@/components/dashboard/InventoryClientDashboard";
 
 export const revalidate = 60; // Cache for 60 seconds
 
@@ -106,41 +104,12 @@ export default async function InventoryPage() {
   const { items, stats, categories, sourcings, trendData } = await getInventoryData();
 
   return (
-    <div className="space-y-4 max-w-[1500px] mx-auto">
-      {/* KPI Stats Grid */}
-      <StatsCards
-        totalSKUs={stats.totalSKUs}
-        totalStock={stats.totalStock}
-        outOfStock={stats.outOfStock}
-        lowStock={stats.lowStock}
-        categoriesCount={stats.categoriesCount}
-        lastSyncedAt={stats.lastSyncedAt}
-      />
-
-      {/* Warehouse Stock Trend Chart */}
-      {trendData.length > 0 && (
-        <StockChart
-          data={trendData}
-          title="Overall Warehouse Stock Volume"
-          subtitle="Total units across all 345 SKUs over the 73 recorded dates"
-        />
-      )}
-
-      {/* Main Stock Table */}
-      <div className="space-y-2">
-        <div className="px-0.5">
-          <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Inventory Catalog</h2>
-          <p className="text-[11px] text-slate-400">
-            Live inventory mirrored from Google Sheets with tabular figures and instant lookup.
-          </p>
-        </div>
-
-        <StockTable
-          items={items}
-          categories={categories}
-          sourcings={sourcings}
-        />
-      </div>
-    </div>
+    <InventoryClientDashboard
+      items={items}
+      stats={stats}
+      categories={categories}
+      sourcings={sourcings}
+      initialTrendData={trendData}
+    />
   );
 }

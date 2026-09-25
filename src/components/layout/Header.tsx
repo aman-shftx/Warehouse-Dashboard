@@ -1,15 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { RefreshCw, CheckCircle2, AlertCircle, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { RefreshCw, CheckCircle2, AlertCircle, PanelLeftClose, PanelLeftOpen, Search, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useSidebar } from "./SidebarContext";
+import { useSearch } from "./SearchContext";
 
 export function Header() {
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const router = useRouter();
   const { isCollapsed, toggleSidebar } = useSidebar();
+  const { searchQuery, setSearchQuery, searchInputRef } = useSearch();
 
   async function handleSync() {
     if (syncing) return;
@@ -34,8 +36,8 @@ export function Header() {
   }
 
   return (
-    <header className="h-14 bg-white/95 backdrop-blur border-b border-slate-200/80 px-4 md:px-6 flex items-center justify-between sticky top-0 z-20 shrink-0">
-      <div className="flex items-center gap-2.5">
+    <header className="h-14 bg-white/95 backdrop-blur border-b border-slate-200/80 px-4 md:px-6 flex items-center justify-between sticky top-0 z-20 shrink-0 gap-4">
+      <div className="flex items-center gap-2.5 shrink-0">
         <button
           onClick={toggleSidebar}
           className="p-1.5 -ml-1 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100 active:scale-95 transition-all duration-100"
@@ -51,7 +53,35 @@ export function Header() {
         <span className="h-4 w-px bg-slate-200" />
         <h2 className="text-[13px] font-semibold text-slate-900 tracking-tight">Warehouse Operations</h2>
         <span className="text-slate-300">/</span>
-        <span className="text-xs text-slate-500 font-medium hidden sm:inline">Inventory & Sourcing Mirror</span>
+        <span className="text-xs text-slate-700 font-semibold">Inventory</span>
+      </div>
+
+      {/* Global Search Bar in Header */}
+      <div className="flex-1 max-w-lg mx-auto">
+        <div className="relative flex items-center">
+          <Search className="absolute left-2.5 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search SKU code, title, brand... (Press / to focus)"
+            className="w-full h-8 pl-8 pr-8 text-xs bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-200 rounded-md outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-100 text-slate-800 placeholder:text-slate-400 font-medium"
+          />
+          {searchQuery ? (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 rounded"
+              title="Clear search"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          ) : (
+            <kbd className="absolute right-2 px-1.5 py-0.5 text-[10px] font-mono text-slate-400 bg-slate-100 border border-slate-200/80 rounded pointer-events-none">
+              /
+            </kbd>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center gap-3">
