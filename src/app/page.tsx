@@ -53,16 +53,21 @@ async function getDashboardData() {
       if (item.sourcing) sourcingSet.add(item.sourcing);
     });
 
-    // 4. Fetch daily totals for overall warehouse trend
-    const { data: dailyData } = await supabaseAdmin
-      .from("daily_stock")
-      .select("date, quantity");
-
+    // 4. Fetch daily totals across all records for warehouse trend
     const dateAggMap = new Map<string, number>();
-    (dailyData || []).forEach((row) => {
-      const prev = dateAggMap.get(row.date) || 0;
-      dateAggMap.set(row.date, prev + (row.quantity || 0));
-    });
+    let offset = 0;
+    while (true) {
+      const { data: page } = await supabaseAdmin
+        .from("daily_stock")
+        .select("date, quantity")
+        .range(offset, offset + 999);
+      if (!page || page.length === 0) break;
+      for (const row of page) {
+        dateAggMap.set(row.date, (dateAggMap.get(row.date) || 0) + (row.quantity || 0));
+      }
+      if (page.length < 1000) break;
+      offset += 1000;
+    }
 
     const trendData = Array.from(dateAggMap.entries())
       .map(([date, quantity]) => ({ date, quantity }))

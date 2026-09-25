@@ -32,8 +32,8 @@ export function Sidebar() {
           <Boxes className="w-6 h-6" />
         </div>
         <div>
-          <h1 className="font-bold text-base tracking-wide text-white">LogisticsHub</h1>
-          <p className="text-xs text-slate-400 font-medium">Warehouse Inventory</p>
+          <h1 className="font-bold text-base tracking-wide text-white">Warehouse</h1>
+          <p className="text-xs text-slate-400 font-medium">Inventory & Sourcing</p>
         </div>
       </div>
 

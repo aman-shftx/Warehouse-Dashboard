@@ -29,8 +29,8 @@ export function StockTable({ items, categories, sourcings }: Props) {
   const [selectedCat, setSelectedCat] = useState("ALL");
   const [selectedSourcing, setSelectedSourcing] = useState("ALL");
   const [stockStatus, setStockStatus] = useState("ALL");
-  const [sortKey, setSortKey] = useState<keyof TableItem>("current_stock");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [sortKey, setSortKey] = useState<keyof TableItem>("sku_code");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 50;
 
