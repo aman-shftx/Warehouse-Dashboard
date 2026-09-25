@@ -1,13 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { RefreshCw, CheckCircle2, AlertCircle, Command } from "lucide-react";
+import { RefreshCw, CheckCircle2, AlertCircle, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useSidebar } from "./SidebarContext";
 
 export function Header() {
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const router = useRouter();
+  const { isCollapsed, toggleSidebar } = useSidebar();
 
   async function handleSync() {
     if (syncing) return;
@@ -32,11 +34,24 @@ export function Header() {
   }
 
   return (
-    <header className="h-14 bg-white/95 backdrop-blur border-b border-slate-200/80 px-6 flex items-center justify-between sticky top-0 z-20">
-      <div className="flex items-center gap-3">
+    <header className="h-14 bg-white/95 backdrop-blur border-b border-slate-200/80 px-4 md:px-6 flex items-center justify-between sticky top-0 z-20 shrink-0">
+      <div className="flex items-center gap-2.5">
+        <button
+          onClick={toggleSidebar}
+          className="p-1.5 -ml-1 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100 active:scale-95 transition-all duration-100"
+          title={isCollapsed ? "Expand sidebar ([)" : "Collapse sidebar ([)"}
+          aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {isCollapsed ? (
+            <PanelLeftOpen className="w-4 h-4 text-slate-600" />
+          ) : (
+            <PanelLeftClose className="w-4 h-4 text-slate-500" />
+          )}
+        </button>
+        <span className="h-4 w-px bg-slate-200" />
         <h2 className="text-[13px] font-semibold text-slate-900 tracking-tight">Warehouse Operations</h2>
         <span className="text-slate-300">/</span>
-        <span className="text-xs text-slate-500 font-medium">Inventory & Sourcing Mirror</span>
+        <span className="text-xs text-slate-500 font-medium hidden sm:inline">Inventory & Sourcing Mirror</span>
       </div>
 
       <div className="flex items-center gap-3">

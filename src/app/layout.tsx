@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
+import { SidebarProvider } from "@/components/layout/SidebarContext";
 
 export const metadata: Metadata = {
   title: "Warehouse Inventory Dashboard",
@@ -14,13 +15,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className="bg-slate-50 flex min-h-screen antialiased text-slate-900">
-        <Sidebar />
-        <div className="flex-1 flex flex-col min-w-0">
-          <Header />
-          <main className="flex-1 p-6 md:p-8 overflow-y-auto">{children}</main>
-        </div>
+    <html lang="en" className="h-full">
+      <body className="bg-slate-50 flex h-screen w-screen overflow-hidden antialiased text-slate-900">
+        <SidebarProvider>
+          <Sidebar />
+          <div className="flex-1 flex flex-col h-screen min-w-0 overflow-hidden">
+            <Header />
+            <main className="flex-1 p-4 md:p-6 lg:p-8 overflow-y-auto overflow-x-hidden">
+              {children}
+            </main>
+          </div>
+        </SidebarProvider>
       </body>
     </html>
   );
