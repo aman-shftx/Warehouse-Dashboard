@@ -47,7 +47,6 @@ async function getDashboardData() {
       totalStock += stock;
       if (stock === 0) outOfStock++;
       else if (item.required_qty > 0 && stock < item.required_qty) lowStock++;
-      else if (item.required_qty === 0 && stock < 10) lowStock++;
 
       if (item.category) catSet.add(item.category);
       if (item.sourcing) sourcingSet.add(item.sourcing);
@@ -110,7 +109,7 @@ export default async function DashboardPage() {
   const { items, stats, categories, sourcings, trendData } = await getDashboardData();
 
   return (
-    <div className="space-y-6 max-w-[1600px] mx-auto">
+    <div className="space-y-4 max-w-[1500px] mx-auto">
       {/* KPI Stats Grid */}
       <StatsCards
         totalSKUs={stats.totalSKUs}
@@ -121,29 +120,30 @@ export default async function DashboardPage() {
         lastSyncedAt={stats.lastSyncedAt}
       />
 
-      {/* Warehouse Stock Trend Chart */}
+      {/* Warehouse Stock Trend Chart - Pattern 15: Headline with the takeaway */}
       {trendData.length > 0 && (
         <StockChart
           data={trendData}
-          title="Overall Warehouse Stock Volume Trend (All SKUs Combined)"
+          title="Overall Warehouse Stock Volume"
+          subtitle="Total units across all 345 SKUs over the 73 recorded dates"
         />
       )}
 
       {/* Main Stock Table */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
+      <div className="space-y-2">
+        <div className="flex items-center justify-between px-0.5">
           <div>
-            <h2 className="text-base font-bold text-slate-800">Inventory Catalog</h2>
-            <p className="text-xs text-slate-500">
-              Live inventory mirrored from Google Sheets. Instant search & multi-filter.
+            <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Inventory Catalog</h2>
+            <p className="text-[11px] text-slate-400">
+              Live inventory mirrored from Google Sheets with tabular figures and instant lookup.
             </p>
           </div>
           <Link
             href="/inventory"
-            className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+            className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-indigo-600 transition-colors"
           >
-            <span>View Full Inventory Table</span>
-            <ArrowRight className="w-3.5 h-3.5" />
+            <span>Full catalog view</span>
+            <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
           </Link>
         </div>
 

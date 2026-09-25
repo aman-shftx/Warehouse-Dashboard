@@ -26,10 +26,10 @@ export default async function InventoryPage() {
   });
 
   return (
-    <div className="space-y-4 max-w-[1600px] mx-auto">
+    <div className="space-y-4 max-w-[1500px] mx-auto">
       <div>
-        <h1 className="text-xl font-bold text-slate-800 tracking-tight">Full Warehouse Inventory</h1>
-        <p className="text-xs text-slate-500 mt-0.5">
+        <h1 className="text-base font-bold text-slate-900 tracking-tight">Full Warehouse Inventory</h1>
+        <p className="text-xs text-slate-400 mt-0.5">
           Complete read-only catalog with SKU lookup, category filtering, and stock counts.
         </p>
       </div>
