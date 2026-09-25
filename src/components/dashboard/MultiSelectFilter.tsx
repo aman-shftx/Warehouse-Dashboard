@@ -23,7 +23,30 @@ export function MultiSelectFilter({
 }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [filterSearch, setFilterSearch] = useState("");
+  const [placement, setPlacement] = useState<{
+    vertical: "down" | "up";
+    horizontal: "left" | "right";
+  }>({ vertical: "down", horizontal: "left" });
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Measure space and toggle dropdown
+  const toggleDropdown = () => {
+    if (!isOpen && dropdownRef.current) {
+      const rect = dropdownRef.current.getBoundingClientRect();
+      const dropdownHeight = 300;
+      const dropdownWidth = 256;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const spaceRight = window.innerWidth - rect.left;
+
+      // Dynamic flip: if space below is less than 280px and space above has more room, open upwards
+      const vertical = spaceBelow < 280 && spaceAbove > spaceBelow ? "up" : "down";
+      const horizontal = spaceRight < dropdownWidth ? "right" : "left";
+
+      setPlacement({ vertical, horizontal });
+    }
+    setIsOpen((prev) => !prev);
+  };
 
   // Close on outside click
   useEffect(() => {
@@ -78,7 +101,7 @@ export function MultiSelectFilter({
     <div className="relative inline-block text-left" ref={dropdownRef}>
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={toggleDropdown}
         className={cn(
           "h-8 px-2.5 rounded-md border text-xs font-medium inline-flex items-center gap-2 transition-all duration-100 outline-none select-none",
           selected.length > 0 && !isAllSelected
@@ -87,11 +110,22 @@ export function MultiSelectFilter({
         )}
       >
         <span className="truncate max-w-[150px]">{buttonLabel}</span>
-        <ChevronDown className={cn("w-3.5 h-3.5 text-slate-400 transition-transform duration-150", isOpen && "rotate-180")} />
+        <ChevronDown
+          className={cn(
+            "w-3.5 h-3.5 text-slate-400 transition-transform duration-150",
+            isOpen && (placement.vertical === "up" ? "-rotate-180" : "rotate-180")
+          )}
+        />
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-1 w-64 rounded-lg bg-white border border-slate-200/90 shadow-xl z-50 p-2 text-xs flex flex-col gap-1.5 animate-in fade-in zoom-in-95 duration-100">
+        <div
+          className={cn(
+            "absolute w-64 rounded-lg bg-white border border-slate-200/90 shadow-xl z-50 p-2 text-xs flex flex-col gap-1.5 animate-in fade-in duration-100",
+            placement.vertical === "up" ? "bottom-full mb-1.5 origin-bottom" : "top-full mt-1.5 origin-top",
+            placement.horizontal === "right" ? "right-0" : "left-0"
+          )}
+        >
           {/* Header row: title and select all / clear */}
           <div className="flex items-center justify-between px-1.5 pb-1 border-b border-slate-100">
             <span className="font-semibold text-slate-800 text-[11px] uppercase tracking-wider">

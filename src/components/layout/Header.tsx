@@ -1,17 +1,30 @@
 "use client";
 
 import { useState } from "react";
-import { RefreshCw, CheckCircle2, AlertCircle, PanelLeftClose, PanelLeftOpen, Search, X } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useSidebar } from "./SidebarContext";
+import { RefreshCw, CheckCircle2, AlertCircle, Search, X } from "lucide-react";
+import { useRouter, usePathname } from "next/navigation";
 import { useSearch } from "./SearchContext";
 
 export function Header() {
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const router = useRouter();
-  const { isCollapsed, toggleSidebar } = useSidebar();
+  const pathname = usePathname();
   const { searchQuery, setSearchQuery, searchInputRef } = useSearch();
+
+  function getPageName(path: string) {
+    if (path === "/") return "Overview";
+    if (path.startsWith("/inventory")) return "Inventory";
+    if (path.startsWith("/analytics")) return "Analytics & DRR";
+    if (path.startsWith("/alerts")) return "Alerts & Reorder";
+    if (path.startsWith("/product/")) {
+      const sku = decodeURIComponent(path.replace("/product/", ""));
+      return `Product: ${sku}`;
+    }
+    return "Overview";
+  }
+
+  const currentPageName = getPageName(pathname);
 
   async function handleSync() {
     if (syncing) return;
@@ -35,25 +48,21 @@ export function Header() {
     }
   }
 
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setSearchQuery(val);
+    if (val && pathname !== "/inventory" && !pathname.startsWith("/product")) {
+      router.push("/inventory");
+    }
+  };
+
   return (
     <header className="h-14 bg-white/95 backdrop-blur border-b border-slate-200/80 px-4 md:px-6 flex items-center justify-between sticky top-0 z-20 shrink-0 gap-4">
-      <div className="flex items-center gap-2.5 shrink-0">
-        <button
-          onClick={toggleSidebar}
-          className="p-1.5 -ml-1 rounded-md text-slate-500 hover:text-slate-800 hover:bg-slate-100 active:scale-95 transition-all duration-100"
-          title={isCollapsed ? "Expand sidebar ([)" : "Collapse sidebar ([)"}
-          aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {isCollapsed ? (
-            <PanelLeftOpen className="w-4 h-4 text-slate-600" />
-          ) : (
-            <PanelLeftClose className="w-4 h-4 text-slate-500" />
-          )}
-        </button>
-        <span className="h-4 w-px bg-slate-200" />
+      {/* Dynamic Header Breadcrumb */}
+      <div className="flex items-center gap-2 shrink-0">
         <h2 className="text-[13px] font-semibold text-slate-900 tracking-tight">Warehouse Operations</h2>
         <span className="text-slate-300">/</span>
-        <span className="text-xs text-slate-700 font-semibold">Inventory</span>
+        <span className="text-xs text-slate-700 font-semibold">{currentPageName}</span>
       </div>
 
       {/* Global Search Bar in Header */}
@@ -64,7 +73,7 @@ export function Header() {
             ref={searchInputRef}
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={handleSearchChange}
             placeholder="Search SKU code, title, brand... (Press / to focus)"
             className="w-full h-8 pl-8 pr-8 text-xs bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-200 rounded-md outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-100 text-slate-800 placeholder:text-slate-400 font-medium"
           />
