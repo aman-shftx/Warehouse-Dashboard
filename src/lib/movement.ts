@@ -9,6 +9,7 @@ export interface MovementItem {
   current_stock: number;
   prev_stock: number;
   sourcing: string;
+  trend: number[]; // Daily stock level history from prevDate to latestDate
 }
 
 export interface MovementSectionData {
@@ -87,6 +88,38 @@ export async function getInventoryMovement(days: number = 1): Promise<MovementDa
 
   const allSkus = new Set([...prevMap.keys(), ...latestMap.keys()]);
 
+  // 5. Fetch daily trend for moving SKUs
+  const movingSkus = Array.from(allSkus).filter((sku) => {
+    const p = prevMap.get(sku) ?? 0;
+    const c = latestMap.get(sku) ?? 0;
+    return p !== c;
+  });
+
+  const skuTrendMap = new Map<string, number[]>();
+  if (movingSkus.length > 0) {
+    const batches = [];
+    for (let i = 0; i < movingSkus.length; i += 100) {
+      batches.push(movingSkus.slice(i, i + 100));
+    }
+    const results = await Promise.all(
+      batches.map((batch) =>
+        supabaseAdmin
+          .from("daily_stock")
+          .select("sku_code, date, quantity")
+          .in("sku_code", batch)
+          .gte("date", prevDate)
+          .lte("date", latestDate)
+          .order("date", { ascending: true })
+      )
+    );
+    results.forEach(({ data: rows }) => {
+      (rows || []).forEach((r) => {
+        if (!skuTrendMap.has(r.sku_code)) skuTrendMap.set(r.sku_code, []);
+        skuTrendMap.get(r.sku_code)!.push(r.quantity || 0);
+      });
+    });
+  }
+
   const outwardItems: MovementItem[] = [];
   const inwardItems: MovementItem[] = [];
 
@@ -101,6 +134,8 @@ export async function getInventoryMovement(days: number = 1): Promise<MovementDa
     const name = prod?.product_name || sku;
     const skuCode = prod?.sku_code || sku;
     const sourcing = prod?.sourcing || "MARKET";
+    const rawTrend = skuTrendMap.get(skuCode) || skuTrendMap.get(sku) || [prevQty, currQty];
+    const trend = rawTrend.length > 0 ? rawTrend : [prevQty, currQty];
 
     if (diff < 0) {
       // Outward: quantity decreased from last date to today
@@ -114,6 +149,7 @@ export async function getInventoryMovement(days: number = 1): Promise<MovementDa
         current_stock: currQty,
         prev_stock: prevQty,
         sourcing,
+        trend,
       });
     } else if (diff > 0) {
       // Inward: quantity increased
@@ -127,6 +163,7 @@ export async function getInventoryMovement(days: number = 1): Promise<MovementDa
         current_stock: currQty,
         prev_stock: prevQty,
         sourcing,
+        trend,
       });
     }
   });

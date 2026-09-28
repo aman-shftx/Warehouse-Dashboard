@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { formatNumber, formatDate, cn } from "@/lib/utils";
 import { MovementItem, MovementSectionData } from "@/lib/movement";
+import { MovementSparkline } from "./MovementSparkline";
 
 interface Props {
   type: "outward" | "inward";
@@ -419,32 +420,24 @@ export function MovementTrackerCard({
                 </div>
               </th>
 
-              {/* Name / Product Title (36%) */}
+              {/* Combined Name & SKU Stacked (38%) */}
               <th
                 onClick={() => toggleSort("name")}
-                className="py-2 px-3 cursor-pointer hover:text-slate-900 transition-colors w-[36%]"
+                className="py-2 px-3 cursor-pointer hover:text-slate-900 transition-colors w-[38%]"
               >
                 <div className="flex items-center gap-1">
-                  <span className="text-[10px] font-bold tracking-tight truncate">NAME / TITLE</span>
+                  <div className="flex flex-col leading-[11px]">
+                    <span className="text-[10px] font-bold tracking-tight truncate">NAME / TITLE</span>
+                    <span className="text-[9px] text-slate-400 font-medium">SKU CODE</span>
+                  </div>
                   <ArrowUpDown className="w-2.5 h-2.5 text-slate-400 shrink-0" />
                 </div>
               </th>
 
-              {/* SKU Code (22%) */}
-              <th
-                onClick={() => toggleSort("sku")}
-                className="py-2 px-3 cursor-pointer hover:text-slate-900 transition-colors w-[22%]"
-              >
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] font-bold tracking-tight truncate">SKU CODE</span>
-                  <ArrowUpDown className="w-2.5 h-2.5 text-slate-400 shrink-0" />
-                </div>
-              </th>
-
-              {/* Dispatched Qty / Inward Qty (12% - Stacked Header) */}
+              {/* Dispatched Qty / Inward Qty (14% - Stacked Header) */}
               <th
                 onClick={() => toggleSort("change_qty")}
-                className="py-2 px-3 cursor-pointer hover:text-slate-900 transition-colors text-right w-[12%]"
+                className="py-2 px-3 cursor-pointer hover:text-slate-900 transition-colors text-right w-[14%]"
               >
                 <div className="flex items-center justify-end gap-1">
                   <div className="flex flex-col text-right leading-[11px]">
@@ -455,10 +448,10 @@ export function MovementTrackerCard({
                 </div>
               </th>
 
-              {/* Current Stock (12% - Stacked Header: CURRENT over STOCK) */}
+              {/* Current Stock (14% - Stacked Header) */}
               <th
                 onClick={() => toggleSort("current_stock")}
-                className="py-2 px-3 cursor-pointer hover:text-slate-900 transition-colors text-right w-[12%]"
+                className="py-2 px-3 cursor-pointer hover:text-slate-900 transition-colors text-right w-[14%]"
               >
                 <div className="flex items-center justify-end gap-1">
                   <div className="flex flex-col text-right leading-[11px]">
@@ -466,6 +459,14 @@ export function MovementTrackerCard({
                     <span className="text-[9px] text-slate-400 font-medium">STOCK</span>
                   </div>
                   <ArrowUpDown className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                </div>
+              </th>
+
+              {/* Trend Sparkline (16%) */}
+              <th className="py-2 px-2.5 text-right w-[16%]">
+                <div className="flex flex-col text-right leading-[11px]">
+                  <span className="text-[10px] font-bold tracking-tight">TREND</span>
+                  <span className="text-[9px] text-slate-400 font-medium">{days}D FLOW</span>
                 </div>
               </th>
             </tr>
@@ -477,9 +478,9 @@ export function MovementTrackerCard({
                 <tr key={idx} className="animate-pulse h-10">
                   <td className="py-2 px-3"><div className="h-4 bg-slate-200 rounded w-full" /></td>
                   <td className="py-2 px-3"><div className="h-4 bg-slate-200 rounded w-full" /></td>
-                  <td className="py-2 px-3"><div className="h-4 bg-slate-200 rounded w-full" /></td>
                   <td className="py-2 px-3 text-right"><div className="h-4 bg-slate-200 rounded w-12 ml-auto" /></td>
                   <td className="py-2 px-3 text-right"><div className="h-4 bg-slate-200 rounded w-12 ml-auto" /></td>
+                  <td className="py-2 px-2.5 text-right"><div className="h-4 bg-slate-200 rounded w-14 ml-auto" /></td>
                 </tr>
               ))
             ) : paginatedItems.length > 0 ? (
@@ -494,44 +495,52 @@ export function MovementTrackerCard({
                       <span className="font-semibold text-slate-800 text-[11px] truncate uppercase tracking-tight" title={item.category || ""}>
                         {item.category || "—"}
                       </span>
-                      <span className="font-medium text-slate-500 text-[11px] truncate" title={item.brand || ""}>
+                      <span className="font-medium text-slate-500 text-[10px] truncate" title={item.brand || ""}>
                         {item.brand || "—"}
                       </span>
                     </div>
                   </td>
 
-                  {/* Name (36%) */}
+                  {/* Combined Name on Top & SKU underneath (38%) */}
                   <td className="py-1.5 px-3 overflow-hidden align-middle">
-                    <span
-                      className="truncate block font-medium text-slate-900 text-xs tracking-tight"
-                      title={item.name}
-                    >
-                      {item.name}
-                    </span>
+                    <div className="flex flex-col min-w-0">
+                      <span
+                        className="truncate block font-medium text-slate-900 text-xs tracking-tight leading-snug"
+                        title={item.name}
+                      >
+                        {item.name}
+                      </span>
+                      <span
+                        className="truncate block font-mono text-[10px] text-slate-500 leading-tight mt-0.5"
+                        title={item.sku}
+                      >
+                        {item.sku}
+                      </span>
+                    </div>
                   </td>
 
-                  {/* SKU (22%) */}
-                  <td className="py-1.5 px-3 overflow-hidden align-middle">
-                    <span
-                      className="truncate block font-mono text-[11px] text-slate-600 bg-slate-100/70 px-1.5 py-0.5 rounded border border-slate-200/50 w-fit max-w-full font-medium"
-                      title={item.sku}
-                    >
-                      {item.sku}
-                    </span>
-                  </td>
-
-                  {/* Dispatched Qty or Inward Qty (12% - Right Aligned) */}
+                  {/* Dispatched Qty or Inward Qty (14% - Right Aligned) */}
                   <td className="py-1.5 px-3 text-right overflow-hidden align-middle">
                     <span className={cn("font-mono font-bold text-xs block truncate", theme.qtyText)}>
                       {isOutward ? `-${formatNumber(item.change_qty)}` : `+${formatNumber(item.change_qty)}`}
                     </span>
                   </td>
 
-                  {/* Current Stock (12% - Right Aligned) */}
+                  {/* Current Stock (14% - Right Aligned) */}
                   <td className="py-1.5 px-3 text-right overflow-hidden align-middle">
                     <span className="font-mono font-semibold text-slate-800 text-xs block truncate">
                       {formatNumber(item.current_stock)}
                     </span>
+                  </td>
+
+                  {/* Trend Sparkline (16% - Right Aligned) */}
+                  <td className="py-1.5 px-2.5 text-right overflow-hidden align-middle">
+                    <MovementSparkline
+                      data={item.trend || [item.prev_stock, item.current_stock]}
+                      type={type}
+                      width={68}
+                      height={22}
+                    />
                   </td>
                 </tr>
               ))
