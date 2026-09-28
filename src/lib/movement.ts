@@ -88,7 +88,7 @@ export async function getInventoryMovement(days: number = 1): Promise<MovementDa
 
   const allSkus = new Set([...prevMap.keys(), ...latestMap.keys()]);
 
-  // 5. Fetch daily trend for moving SKUs
+  // 5. Fetch daily trend for moving SKUs (last 14 days by default)
   const movingSkus = Array.from(allSkus).filter((sku) => {
     const p = prevMap.get(sku) ?? 0;
     const c = latestMap.get(sku) ?? 0;
@@ -97,9 +97,14 @@ export async function getInventoryMovement(days: number = 1): Promise<MovementDa
 
   const skuTrendMap = new Map<string, number[]>();
   if (movingSkus.length > 0) {
+    const trendDays = Math.max(14, numDays);
+    const trendStartObj = new Date(latestDate);
+    trendStartObj.setDate(trendStartObj.getDate() - trendDays);
+    const trendStartDate = trendStartObj.toISOString().split("T")[0];
+
     const batches = [];
-    for (let i = 0; i < movingSkus.length; i += 100) {
-      batches.push(movingSkus.slice(i, i + 100));
+    for (let i = 0; i < movingSkus.length; i += 50) {
+      batches.push(movingSkus.slice(i, i + 50));
     }
     const results = await Promise.all(
       batches.map((batch) =>
@@ -107,7 +112,7 @@ export async function getInventoryMovement(days: number = 1): Promise<MovementDa
           .from("daily_stock")
           .select("sku_code, date, quantity")
           .in("sku_code", batch)
-          .gte("date", prevDate)
+          .gte("date", trendStartDate)
           .lte("date", latestDate)
           .order("date", { ascending: true })
       )
@@ -134,8 +139,15 @@ export async function getInventoryMovement(days: number = 1): Promise<MovementDa
     const name = prod?.product_name || sku;
     const skuCode = prod?.sku_code || sku;
     const sourcing = prod?.sourcing || "MARKET";
-    const rawTrend = skuTrendMap.get(skuCode) || skuTrendMap.get(sku) || [prevQty, currQty];
-    const trend = rawTrend.length > 0 ? rawTrend : [prevQty, currQty];
+    const rawTrend = skuTrendMap.get(skuCode) || skuTrendMap.get(sku) || [];
+    let trend: number[];
+    if (rawTrend.length >= 2) {
+      trend = rawTrend;
+    } else if (rawTrend.length === 1) {
+      trend = [prevQty, rawTrend[0]];
+    } else {
+      trend = [prevQty, currQty];
+    }
 
     if (diff < 0) {
       // Outward: quantity decreased from last date to today

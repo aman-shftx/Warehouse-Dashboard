@@ -187,76 +187,55 @@ export function MovementTrackerCard({
     document.body.removeChild(link);
   };
 
-  // Unified color classes per card type
-  const theme = isOutward
-    ? {
-        cardBorder: "border-slate-200/90",
-        iconBox: "bg-rose-50/80 text-rose-700 border-rose-200/60",
-        badge: "bg-rose-50 text-rose-700 border-rose-200/70",
-        delayBadge: "bg-rose-50/60 text-rose-700 border-rose-200/50",
-        daysActive: "bg-rose-700 text-white shadow-xs",
-        daysHover: "hover:text-rose-700 hover:bg-rose-50/80",
-        metricBox: "bg-rose-50/30 border-rose-100/80",
-        metricLabel: "text-rose-900/60",
-        metricVal: "text-rose-700",
-        tableHeader: "bg-rose-50/30 border-rose-100/70 text-slate-600",
-        qtyText: "text-rose-700",
-        rowHover: "hover:bg-rose-50/25",
-      }
-    : {
-        cardBorder: "border-slate-200/90",
-        iconBox: "bg-emerald-50/80 text-emerald-700 border-emerald-200/60",
-        badge: "bg-emerald-50 text-emerald-700 border-emerald-200/70",
-        delayBadge: "bg-emerald-50/60 text-emerald-700 border-emerald-200/50",
-        daysActive: "bg-emerald-700 text-white shadow-xs",
-        daysHover: "hover:text-emerald-700 hover:bg-emerald-50/80",
-        metricBox: "bg-emerald-50/30 border-emerald-100/80",
-        metricLabel: "text-emerald-900/60",
-        metricVal: "text-emerald-700",
-        tableHeader: "bg-emerald-50/30 border-emerald-100/70 text-slate-600",
-        qtyText: "text-emerald-700",
-        rowHover: "hover:bg-emerald-50/25",
-      };
+  // Unified styling for table rows
+  const theme = {
+    tableHeader: "bg-slate-50/70 border-slate-200/80 text-slate-600",
+    rowHover: "hover:bg-slate-50/60",
+    qtyText: isOutward ? "text-rose-700" : "text-emerald-700",
+  };
 
   return (
-    <div className={cn("bg-white rounded-lg border shadow-[0_1px_3px_rgba(0,0,0,0.02)] overflow-hidden flex flex-col h-full", theme.cardBorder)}>
-      {/* 1. Master Card Header with Title on Left, Centered Metrics, and Controls on Right */}
+    <div className="bg-white rounded-lg border border-slate-200/90 shadow-[0_1px_3px_rgba(0,0,0,0.02)] overflow-hidden flex flex-col h-full">
+      {/* 1. Master Card Header with Title on Left, Centered Large Metrics, and Controls on Right */}
       <div className="p-3 border-b border-slate-100 bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          {/* Left: Heading with Date below it */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Left: Heading with Date below it (monochrome shades of black) */}
           <div className="min-w-0">
             <h2 className="text-sm font-bold text-slate-900 tracking-tight whitespace-nowrap">
               {isOutward ? "Material Outward" : "Material Inward"}
             </h2>
-            <p className="text-[11px] text-slate-400 font-mono mt-0.5 flex items-center gap-1.5 whitespace-nowrap">
+            <p className="text-[11px] text-slate-500 font-mono mt-0.5 flex items-center gap-1.5 whitespace-nowrap">
               <span>{formatDate(prevDate)} → {formatDate(latestDate)}</span>
-              <span className={cn("font-sans font-medium text-[9px] px-1 py-0.2 rounded border", theme.delayBadge)}>
+              <span className="font-sans font-medium text-[9px] px-1.5 py-0.5 rounded border bg-slate-100 text-slate-600 border-slate-200/80">
                 T-1 Delay
               </span>
             </p>
           </div>
 
-          {/* Center: Number of SKUs and Total Quantities in the center */}
-          <div className="flex items-center gap-1.5 shrink-0 justify-center">
-            <div className="flex items-baseline gap-1 px-2.5 py-1 rounded bg-slate-100 text-slate-700 text-xs font-mono font-semibold border border-slate-200/60 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-              <span>{formatNumber(data.totalSkus)}</span>
-              <span className="text-[10px] text-slate-500 font-sans font-normal">SKUs</span>
+          {/* Center: Number of SKUs and Total Quantities (Bigger Numbers, monochrome shades of black) */}
+          <div className="flex items-center gap-2 shrink-0 justify-center">
+            {/* Total SKUs */}
+            <div className="flex items-baseline gap-1.5 px-3 py-1 rounded-md bg-slate-50 border border-slate-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+              <span className="text-base sm:text-lg font-bold font-mono text-slate-900 leading-none">
+                {formatNumber(data.totalSkus)}
+              </span>
+              <span className="text-[10px] font-semibold text-slate-500 font-sans uppercase tracking-wider">
+                SKUs
+              </span>
             </div>
 
-            <div
-              className={cn(
-                "flex items-baseline gap-1 px-2.5 py-1 rounded text-xs font-mono font-bold border shadow-[0_1px_2px_rgba(0,0,0,0.02)]",
-                isOutward
-                  ? "bg-rose-50 text-rose-700 border-rose-200/70"
-                  : "bg-emerald-50 text-emerald-700 border-emerald-200/70"
-              )}
-            >
-              <span>{isOutward ? `-${formatNumber(data.totalQty)}` : `+${formatNumber(data.totalQty)}`}</span>
-              <span className="text-[10px] font-sans font-normal">Units</span>
+            {/* Total Units */}
+            <div className="flex items-baseline gap-1.5 px-3 py-1 rounded-md bg-slate-50 border border-slate-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+              <span className="text-base sm:text-lg font-bold font-mono text-slate-900 leading-none">
+                {formatNumber(data.totalQty)}
+              </span>
+              <span className="text-[10px] font-semibold text-slate-500 font-sans uppercase tracking-wider">
+                Units
+              </span>
             </div>
           </div>
 
-          {/* Right: Days Selector & Export CSV */}
+          {/* Right: Days Selector & Export CSV (shades of black) */}
           <div className="flex items-center gap-1 shrink-0 justify-end">
             <div className="relative inline-flex items-center rounded-md border border-slate-200 bg-slate-50/80 p-0.5 text-xs font-medium">
               {[1, 3, 7].map((d) => (
@@ -265,10 +244,10 @@ export function MovementTrackerCard({
                   onClick={() => handleSelectDays(d)}
                   disabled={loading}
                   className={cn(
-                    "h-6 min-w-[24px] px-1.5 rounded transition-all text-[11px] font-semibold flex items-center justify-center",
+                    "h-6 min-w-[26px] px-2 rounded transition-all text-[11px] font-semibold flex items-center justify-center",
                     days === d && !isCustomDays
-                      ? theme.daysActive
-                      : cn("text-slate-600 hover:text-slate-900", theme.daysHover)
+                      ? "bg-slate-900 text-white shadow-xs"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/70"
                   )}
                 >
                   {d}d
@@ -283,8 +262,8 @@ export function MovementTrackerCard({
                 className={cn(
                   "h-6 px-1.5 rounded transition-all text-[11px] font-semibold flex items-center justify-center gap-0.5",
                   isCustomDays
-                    ? theme.daysActive
-                    : cn("text-slate-600 hover:text-slate-900", theme.daysHover)
+                    ? "bg-slate-900 text-white shadow-xs"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/70"
                 )}
               >
                 {isCustomDays && <span className="font-mono text-[10px]">{days}d</span>}
@@ -329,10 +308,7 @@ export function MovementTrackerCard({
                     </div>
                     <button
                       onClick={handleApplyCustomDays}
-                      className={cn(
-                        "w-full py-1 text-xs font-semibold text-white rounded transition-colors flex items-center justify-center gap-1",
-                        isOutward ? "bg-rose-700 hover:bg-rose-800" : "bg-emerald-700 hover:bg-emerald-800"
-                      )}
+                      className="w-full py-1 text-xs font-semibold text-white bg-slate-900 hover:bg-black rounded transition-colors flex items-center justify-center gap-1"
                     >
                       <Check className="w-3 h-3" />
                       Apply
@@ -346,7 +322,7 @@ export function MovementTrackerCard({
             <button
               onClick={handleExportCSV}
               title="Export CSV"
-              className="h-6 w-6 rounded border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50 flex items-center justify-center transition-colors"
+              className="h-6 w-6 rounded border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-100 flex items-center justify-center transition-colors"
             >
               <Download className="w-3 h-3" />
             </button>
@@ -466,7 +442,7 @@ export function MovementTrackerCard({
               <th className="py-2 px-2.5 text-right w-[16%]">
                 <div className="flex flex-col text-right leading-[11px]">
                   <span className="text-[10px] font-bold tracking-tight">TREND</span>
-                  <span className="text-[9px] text-slate-400 font-medium">{days}D FLOW</span>
+                  <span className="text-[9px] text-slate-400 font-medium">{Math.max(14, days)}D FLOW</span>
                 </div>
               </th>
             </tr>
@@ -538,6 +514,7 @@ export function MovementTrackerCard({
                     <MovementSparkline
                       data={item.trend || [item.prev_stock, item.current_stock]}
                       type={type}
+                      days={Math.max(14, days)}
                       width={68}
                       height={22}
                     />

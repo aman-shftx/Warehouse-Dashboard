@@ -6,6 +6,7 @@ import { formatNumber } from "@/lib/utils";
 interface SparklineProps {
   data: number[];
   type: "outward" | "inward";
+  days?: number;
   width?: number;
   height?: number;
 }
@@ -13,6 +14,7 @@ interface SparklineProps {
 export function MovementSparkline({
   data,
   type,
+  days = 14,
   width = 68,
   height = 22,
 }: SparklineProps) {
@@ -71,7 +73,7 @@ export function MovementSparkline({
   return (
     <div
       className="inline-flex items-center justify-end group/spark relative cursor-default"
-      title={`Start: ${formatNumber(startVal)} → Current: ${formatNumber(endVal)} (${netDelta > 0 ? "+" : ""}${formatNumber(netDelta)})`}
+      title={`${days}D Trend: ${formatNumber(startVal)} → ${formatNumber(endVal)} (${netDelta > 0 ? "+" : ""}${formatNumber(netDelta)})`}
     >
       <svg
         width={width}
