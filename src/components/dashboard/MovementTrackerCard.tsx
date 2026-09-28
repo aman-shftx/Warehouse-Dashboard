@@ -219,45 +219,44 @@ export function MovementTrackerCard({
 
   return (
     <div className={cn("bg-white rounded-lg border shadow-[0_1px_3px_rgba(0,0,0,0.02)] overflow-hidden flex flex-col h-full", theme.cardBorder)}>
-      {/* 1. Master Card Header with Title & Inline Metrics */}
+      {/* 1. Master Card Header with Title on Left, Centered Metrics, and Controls on Right */}
       <div className="p-3 border-b border-slate-100 bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-2.5">
-          {/* Left: Heading + Shifted Metrics to its right */}
-          <div className="flex flex-wrap items-center gap-2.5 min-w-0">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {/* Left: Heading with Date below it */}
+          <div className="min-w-0">
             <h2 className="text-sm font-bold text-slate-900 tracking-tight whitespace-nowrap">
               {isOutward ? "Material Outward" : "Material Inward"}
             </h2>
+            <p className="text-[11px] text-slate-400 font-mono mt-0.5 flex items-center gap-1.5 whitespace-nowrap">
+              <span>{formatDate(prevDate)} → {formatDate(latestDate)}</span>
+              <span className={cn("font-sans font-medium text-[9px] px-1 py-0.2 rounded border", theme.delayBadge)}>
+                T-1 Delay
+              </span>
+            </p>
+          </div>
 
-            {/* Shifted metrics directly to the right of the heading */}
-            <div className="flex items-center gap-1.5 shrink-0">
-              <div className="flex items-baseline gap-1 px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-xs font-mono font-semibold border border-slate-200/60">
-                <span>{formatNumber(data.totalSkus)}</span>
-                <span className="text-[10px] text-slate-500 font-sans font-normal">SKUs</span>
-              </div>
+          {/* Center: Number of SKUs and Total Quantities in the center */}
+          <div className="flex items-center gap-1.5 shrink-0 justify-center">
+            <div className="flex items-baseline gap-1 px-2.5 py-1 rounded bg-slate-100 text-slate-700 text-xs font-mono font-semibold border border-slate-200/60 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+              <span>{formatNumber(data.totalSkus)}</span>
+              <span className="text-[10px] text-slate-500 font-sans font-normal">SKUs</span>
+            </div>
 
-              <div
-                className={cn(
-                  "flex items-baseline gap-1 px-2 py-0.5 rounded text-xs font-mono font-bold border",
-                  isOutward
-                    ? "bg-rose-50 text-rose-700 border-rose-200/70"
-                    : "bg-emerald-50 text-emerald-700 border-emerald-200/70"
-                )}
-              >
-                <span>{isOutward ? `-${formatNumber(data.totalQty)}` : `+${formatNumber(data.totalQty)}`}</span>
-                <span className="text-[10px] font-sans font-normal">Units</span>
-              </div>
+            <div
+              className={cn(
+                "flex items-baseline gap-1 px-2.5 py-1 rounded text-xs font-mono font-bold border shadow-[0_1px_2px_rgba(0,0,0,0.02)]",
+                isOutward
+                  ? "bg-rose-50 text-rose-700 border-rose-200/70"
+                  : "bg-emerald-50 text-emerald-700 border-emerald-200/70"
+              )}
+            >
+              <span>{isOutward ? `-${formatNumber(data.totalQty)}` : `+${formatNumber(data.totalQty)}`}</span>
+              <span className="text-[10px] font-sans font-normal">Units</span>
             </div>
           </div>
 
-          {/* Right: Date Range + Days Selector & Export CSV */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <div className="hidden sm:flex items-center gap-1 text-[11px] text-slate-400 font-mono">
-              <span>{formatDate(prevDate)} → {formatDate(latestDate)}</span>
-              <span className={cn("font-sans font-medium text-[9px] px-1 py-0.2 rounded border ml-0.5", theme.delayBadge)}>
-                T-1
-              </span>
-            </div>
-
+          {/* Right: Days Selector & Export CSV */}
+          <div className="flex items-center gap-1 shrink-0 justify-end">
             <div className="relative inline-flex items-center rounded-md border border-slate-200 bg-slate-50/80 p-0.5 text-xs font-medium">
               {[1, 3, 7].map((d) => (
                 <button
