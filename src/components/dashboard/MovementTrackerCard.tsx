@@ -7,6 +7,8 @@ import {
   Pencil, 
   ChevronLeft, 
   ChevronRight, 
+  ChevronDown,
+  ChevronUp,
   Download, 
   ArrowUpDown, 
   RotateCcw, 
@@ -52,7 +54,8 @@ export function MovementTrackerCard({
   const [sortKey, setSortKey] = useState<"change_qty" | "current_stock" | "name" | "sku" | "brand" | "category">("change_qty");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const pageSize = 10;
+  const [isExpandedTo10, setIsExpandedTo10] = useState<boolean>(false);
+  const pageSize = isExpandedTo10 ? 10 : 5;
 
   // Fetch updated data when days change
   async function fetchDaysData(targetDays: number, customFlag: boolean = false) {
@@ -490,7 +493,7 @@ export function MovementTrackerCard({
 
           <tbody className="divide-y divide-slate-100 text-[12px] leading-5">
             {loading ? (
-              Array.from({ length: 6 }).map((_, idx) => (
+              Array.from({ length: pageSize }).map((_, idx) => (
                 <tr key={idx} className="animate-pulse h-10">
                   <td className="py-2 px-3"><div className="h-4 bg-slate-200 rounded w-full" /></td>
                   <td className="py-2 px-3"><div className="h-4 bg-slate-200 rounded w-full" /></td>
@@ -582,35 +585,71 @@ export function MovementTrackerCard({
         </table>
       </div>
 
-      {/* 5. Pagination */}
-      {filteredItems.length > pageSize && (
-        <div className="px-3 py-2 border-t border-slate-100 bg-slate-50/30 flex items-center justify-between text-xs text-slate-500 mt-auto">
-          <span>
-            <span className="font-semibold text-slate-800">
-              {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filteredItems.length)}
-            </span>{" "}
-            of <span className="font-semibold text-slate-800">{filteredItems.length}</span>
-          </span>
-
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="h-6 px-1.5 rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center transition-colors"
-            >
-              <ChevronLeft className="w-3 h-3" />
-            </button>
-            <span className="text-[11px] px-1 font-mono text-slate-500">
-              {currentPage}/{totalPages}
+      {/* 5. Footer with Expand to 10 rows toggle icon and side pagination buttons */}
+      {filteredItems.length > 0 && (
+        <div className="px-3 py-2 border-t border-slate-100 bg-slate-50/40 flex items-center justify-between text-xs text-slate-500 mt-auto">
+          {/* Left: Item range and Expand to 10 icon button */}
+          <div className="flex items-center gap-2">
+            <span className="text-[11px]">
+              <span className="font-semibold text-slate-800">
+                {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filteredItems.length)}
+              </span>{" "}
+              of <span className="font-semibold text-slate-800">{filteredItems.length}</span>
             </span>
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="h-6 px-1.5 rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center transition-colors"
-            >
-              <ChevronRight className="w-3 h-3" />
-            </button>
+
+            {filteredItems.length > 5 && (
+              <button
+                onClick={() => {
+                  setIsExpandedTo10(!isExpandedTo10);
+                  setCurrentPage(1);
+                }}
+                className={cn(
+                  "h-5 px-1.5 rounded border text-[10px] font-semibold flex items-center gap-1 transition-all",
+                  isExpandedTo10
+                    ? "bg-slate-200/90 text-slate-800 border-slate-300 hover:bg-slate-300"
+                    : "bg-white text-slate-600 border-slate-200/90 hover:bg-slate-50 hover:text-slate-900"
+                )}
+                title={isExpandedTo10 ? "Collapse to 5 rows" : "Expand to 10 rows"}
+              >
+                {isExpandedTo10 ? (
+                  <>
+                    <ChevronUp className="w-2.5 h-2.5 text-slate-600" />
+                    <span>5 rows</span>
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="w-2.5 h-2.5 text-slate-600" />
+                    <span>10 rows</span>
+                  </>
+                )}
+              </button>
+            )}
           </div>
+
+          {/* Right: Side Next and Prev Navigation Buttons */}
+          {filteredItems.length > pageSize && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="h-6 px-1.5 rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center transition-colors font-medium"
+                title="Previous page"
+              >
+                <ChevronLeft className="w-3 h-3" />
+              </button>
+              <span className="text-[11px] px-1 font-mono text-slate-500">
+                {currentPage}/{totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="h-6 px-1.5 rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center transition-colors font-medium"
+                title="Next page"
+              >
+                <ChevronRight className="w-3 h-3" />
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
