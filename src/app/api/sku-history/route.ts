@@ -7,19 +7,33 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const sku = searchParams.get("sku");
 
-  if (!sku) {
-    return NextResponse.json({ error: "Missing sku parameter" }, { status: 400 });
+  if (!sku || typeof sku !== "string") {
+    return NextResponse.json({ error: "Missing or invalid sku parameter" }, { status: 400 });
+  }
+
+  const cleanSku = sku.trim();
+  if (cleanSku.length === 0 || cleanSku.length > 120 || !/^[a-zA-Z0-9_\-\.\/\s]+$/.test(cleanSku)) {
+    return NextResponse.json({ error: "Invalid SKU format" }, { status: 400 });
   }
 
   try {
-    // 1. Fetch product master to check if old_sku_code is also used
-    const { data: product } = await supabaseAdmin
+    // 1. Fetch product master by sku_code or old_sku_code using safe parameterized filter
+    let { data: product } = await supabaseAdmin
       .from("products")
       .select("sku_code, old_sku_code, product_name, brand, category, current_stock:v_current_stock(current_stock)")
-      .or(`sku_code.eq.${sku},old_sku_code.eq.${sku}`)
+      .eq("sku_code", cleanSku)
       .maybeSingle();
 
-    const targetSku = product?.sku_code || sku;
+    if (!product) {
+      const { data: oldSkuMatch } = await supabaseAdmin
+        .from("products")
+        .select("sku_code, old_sku_code, product_name, brand, category, current_stock:v_current_stock(current_stock)")
+        .eq("old_sku_code", cleanSku)
+        .maybeSingle();
+      product = oldSkuMatch;
+    }
+
+    const targetSku = product?.sku_code || cleanSku;
 
     // 2. Fetch daily stock history
     const { data: history, error } = await supabaseAdmin

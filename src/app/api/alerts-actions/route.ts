@@ -85,46 +85,77 @@ export async function GET() {
   return NextResponse.json(state);
 }
 
+function isSafeSkuKey(key: any): key is string {
+  return (
+    typeof key === "string" &&
+    key.length > 0 &&
+    key.length <= 120 &&
+    key !== "__proto__" &&
+    key !== "prototype" &&
+    key !== "constructor"
+  );
+}
+
 export async function POST(req: NextRequest) {
   try {
+    // CSRF / Origin validation
+    const origin = req.headers.get("origin");
+    const host = req.headers.get("host");
+    const secFetchSite = req.headers.get("sec-fetch-site");
+
+    if (secFetchSite && secFetchSite !== "same-origin" && secFetchSite !== "none") {
+      return NextResponse.json({ error: "Forbidden: Cross-site request" }, { status: 403 });
+    }
+
+    if (origin && host) {
+      try {
+        const originHost = new URL(origin).host;
+        if (originHost !== host) {
+          return NextResponse.json({ error: "Forbidden: Cross-origin request" }, { status: 403 });
+        }
+      } catch {
+        return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
+      }
+    }
+
     const body = await req.json();
     const currentState = await getAlertsState();
     let updated = false;
 
     const { action, sku_code, po } = body;
 
-    if (action === "ignore" && sku_code) {
+    if (action === "ignore" && isSafeSkuKey(sku_code)) {
       if (!currentState.ignored.includes(sku_code)) {
         currentState.ignored.push(sku_code);
       }
       if (!currentState.ignoredRemarks) currentState.ignoredRemarks = {};
       if (body.remark && typeof body.remark === "string" && body.remark.trim()) {
-        currentState.ignoredRemarks[sku_code] = body.remark.trim();
+        currentState.ignoredRemarks[sku_code] = body.remark.trim().slice(0, 300);
       } else {
         delete currentState.ignoredRemarks[sku_code];
       }
       delete currentState.poIssued[sku_code];
       updated = true;
-    } else if (action === "unignore" && sku_code) {
+    } else if (action === "unignore" && isSafeSkuKey(sku_code)) {
       currentState.ignored = currentState.ignored.filter((s) => s !== sku_code);
       if (currentState.ignoredRemarks) delete currentState.ignoredRemarks[sku_code];
       updated = true;
-    } else if (action === "mark_po_done" && sku_code) {
+    } else if (action === "mark_po_done" && isSafeSkuKey(sku_code)) {
       if (!currentState.poDone) currentState.poDone = {};
       const currentPo = currentState.poIssued[sku_code];
       currentState.poDone[sku_code] = {
         sku_code,
-        po_no: currentPo?.po_no || body.po_no || "PO-DONE",
-        po_date: currentPo?.po_date || new Date().toISOString().substring(0, 10),
-        qty_ordered: currentPo?.qty_ordered || 0,
-        expected_inward: currentPo?.expected_inward || "",
-        notes: currentPo?.notes || "",
+        po_no: String(currentPo?.po_no || body.po_no || "PO-DONE").slice(0, 50),
+        po_date: String(currentPo?.po_date || new Date().toISOString().substring(0, 10)).slice(0, 20),
+        qty_ordered: Math.max(0, Math.min(1000000, Number(currentPo?.qty_ordered) || 0)),
+        expected_inward: String(currentPo?.expected_inward || "").slice(0, 20),
+        notes: String(currentPo?.notes || "").slice(0, 300),
         done_at: new Date().toISOString(),
-        remark: (body.remark || "").trim()
+        remark: String(body.remark || "").trim().slice(0, 300)
       };
       delete currentState.poIssued[sku_code];
       updated = true;
-    } else if (action === "reopen_po" && sku_code) {
+    } else if (action === "reopen_po" && isSafeSkuKey(sku_code)) {
       if (currentState.poDone && currentState.poDone[sku_code]) {
         const doneItem = currentState.poDone[sku_code];
         currentState.poIssued[sku_code] = {
@@ -139,14 +170,14 @@ export async function POST(req: NextRequest) {
         delete currentState.poDone[sku_code];
         updated = true;
       }
-    } else if (action === "issue_po" && po && po.sku_code) {
+    } else if (action === "issue_po" && po && isSafeSkuKey(po.sku_code)) {
       currentState.poIssued[po.sku_code] = {
         sku_code: po.sku_code,
-        po_no: po.po_no || "PO-" + Date.now().toString().slice(-6),
-        po_date: po.po_date || new Date().toISOString().substring(0, 10),
-        qty_ordered: Number(po.qty_ordered) || 0,
-        expected_inward: po.expected_inward || "",
-        notes: po.notes || "",
+        po_no: String(po.po_no || "PO-" + Date.now().toString().slice(-6)).slice(0, 50),
+        po_date: String(po.po_date || new Date().toISOString().substring(0, 10)).slice(0, 20),
+        qty_ordered: Math.max(0, Math.min(1000000, Number(po.qty_ordered) || 0)),
+        expected_inward: String(po.expected_inward || "").slice(0, 20),
+        notes: String(po.notes || "").slice(0, 300),
         created_at: new Date().toISOString()
       };
       // Ensure it is not in ignored
@@ -154,14 +185,34 @@ export async function POST(req: NextRequest) {
       if (currentState.ignoredRemarks) delete currentState.ignoredRemarks[po.sku_code];
       if (currentState.poDone) delete currentState.poDone[po.sku_code];
       updated = true;
-    } else if (action === "cancel_po" && sku_code) {
+    } else if (action === "cancel_po" && isSafeSkuKey(sku_code)) {
       delete currentState.poIssued[sku_code];
       updated = true;
     } else if (action === "sync_full" && body.state) {
-      currentState.ignored = Array.isArray(body.state.ignored) ? body.state.ignored : currentState.ignored;
-      currentState.poIssued = typeof body.state.poIssued === "object" ? body.state.poIssued : currentState.poIssued;
-      currentState.ignoredRemarks = typeof body.state.ignoredRemarks === "object" ? body.state.ignoredRemarks : currentState.ignoredRemarks;
-      currentState.poDone = typeof body.state.poDone === "object" ? body.state.poDone : currentState.poDone;
+      if (Array.isArray(body.state.ignored)) {
+        currentState.ignored = body.state.ignored.filter(isSafeSkuKey);
+      }
+      if (typeof body.state.poIssued === "object" && body.state.poIssued !== null) {
+        const safePo: Record<string, any> = {};
+        for (const [k, v] of Object.entries(body.state.poIssued)) {
+          if (isSafeSkuKey(k)) safePo[k] = v;
+        }
+        currentState.poIssued = safePo;
+      }
+      if (typeof body.state.ignoredRemarks === "object" && body.state.ignoredRemarks !== null) {
+        const safeRemarks: Record<string, string> = {};
+        for (const [k, v] of Object.entries(body.state.ignoredRemarks)) {
+          if (isSafeSkuKey(k) && typeof v === "string") safeRemarks[k] = v.slice(0, 300);
+        }
+        currentState.ignoredRemarks = safeRemarks;
+      }
+      if (typeof body.state.poDone === "object" && body.state.poDone !== null) {
+        const safePoDone: Record<string, any> = {};
+        for (const [k, v] of Object.entries(body.state.poDone)) {
+          if (isSafeSkuKey(k)) safePoDone[k] = v;
+        }
+        currentState.poDone = safePoDone;
+      }
       updated = true;
     }
 

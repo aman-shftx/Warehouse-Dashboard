@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
+import crypto from "crypto";
 import { syncAllSheets, syncStockSheet, syncInwardData, syncOutwardData, syncSKUCatalog } from "@/lib/sync/sync-service";
 import { invalidateWarehouseIntelligenceCache } from "@/lib/analytics";
 
@@ -41,16 +42,64 @@ async function executeSync(sheet: string | null) {
   };
 }
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const secret = searchParams.get("secret");
-  const sheet = searchParams.get("sheet");
+function safeCompare(a: string, b: string): boolean {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
 
+function isAuthorized(request: Request): boolean {
   const expectedSecret = process.env.SYNC_SECRET;
-  // If secret is set and provided secret doesn't match
-  if (expectedSecret && secret && secret !== expectedSecret) {
+
+  // Check Authorization Bearer header
+  const authHeader = request.headers.get("authorization");
+  if (expectedSecret && authHeader && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.slice(7).trim();
+    if (safeCompare(token, expectedSecret)) return true;
+  }
+
+  // Check ?secret= query parameter
+  const { searchParams } = new URL(request.url);
+  const secretParam = searchParams.get("secret");
+  if (expectedSecret && secretParam) {
+    if (safeCompare(secretParam, expectedSecret)) return true;
+  }
+
+  // Allow trusted same-origin calls initiated by dashboard user interface
+  const origin = request.headers.get("origin");
+  const host = request.headers.get("host");
+  const secFetchSite = request.headers.get("sec-fetch-site");
+
+  if (secFetchSite === "same-origin") {
+    return true;
+  }
+
+  if (origin && host) {
+    try {
+      const originHost = new URL(origin).host;
+      if (originHost === host) return true;
+    } catch {}
+  }
+
+  // If SYNC_SECRET is not configured at all (local dev), permit local requests
+  if (!expectedSecret && (host?.startsWith("localhost") || host?.startsWith("127.0.0.1"))) {
+    return true;
+  }
+
+  return false;
+}
+
+export async function GET(request: Request) {
+  if (!isAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  const { searchParams } = new URL(request.url);
+  const sheet = searchParams.get("sheet");
 
   try {
     const data = await executeSync(sheet);
@@ -61,6 +110,10 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  if (!isAuthorized(request)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const sheet = searchParams.get("sheet");
   try {
