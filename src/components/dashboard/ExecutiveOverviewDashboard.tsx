@@ -19,9 +19,9 @@ import {
   ResponsiveContainer,
   CartesianGrid
 } from "recharts";
-import { ExecutiveOverviewData, POIssuedRecord } from "@/types";
+import { ExecutiveOverviewData, POIssuedRecord, EnrichedSKUItem } from "@/types";
 import { formatNumber, formatDate, cn } from "@/lib/utils";
-import { calculateAlertsMetrics } from "@/lib/alerts-engine";
+import { calculateAlertsMetrics, getTargetQty, getCoverDays30D } from "@/lib/alerts-engine";
 
 interface Props {
   data: ExecutiveOverviewData;
@@ -72,6 +72,40 @@ export function ExecutiveOverviewDashboard({ data }: Props) {
   const alertsMetrics = useMemo(() => {
     return calculateAlertsMetrics(items, ignoredSKUs, poIssuedRecords);
   }, [items, ignoredSKUs, poIssuedRecords]);
+
+  // Sourcing Action Queue: Derived directly from Alert & Reorder data (single source of truth)
+  const sourcingActionList = useMemo(() => {
+    const combinedMap = new Map<string, EnrichedSKUItem>();
+
+    // 1. Stockout items (urgent priority)
+    alertsMetrics.outOfStockList.forEach((item) => {
+      combinedMap.set(item.sku_code, item);
+    });
+
+    // 2. Reorder items (< 30 days cover, includes < 15 days critical)
+    alertsMetrics.reorderRequiredList.forEach((item) => {
+      combinedMap.set(item.sku_code, item);
+    });
+
+    // Sort: Stockouts & Critical (<15d) first, then by Order Required descending
+    return Array.from(combinedMap.values()).sort((a, b) => {
+      const aOOS = a.current_stock === 0;
+      const bOOS = b.current_stock === 0;
+      if (aOOS !== bOOS) return aOOS ? -1 : 1;
+
+      const aCover = getCoverDays30D(a);
+      const bCover = getCoverDays30D(b);
+      const aCritical = aCover < 15;
+      const bCritical = bCover < 15;
+      if (aCritical !== bCritical) return aCritical ? -1 : 1;
+
+      const aOrderReq = getTargetQty(a);
+      const bOrderReq = getTargetQty(b);
+      if (bOrderReq !== aOrderReq) return bOrderReq - aOrderReq;
+
+      return (b.drr_30d || 0) - (a.drr_30d || 0);
+    });
+  }, [alertsMetrics]);
 
   // Compute 30D stock net change
   const stockChange30d = useMemo(() => {
@@ -545,14 +579,14 @@ export function ExecutiveOverviewDashboard({ data }: Props) {
                 Today&apos;s Sourcing Action Queue
               </h2>
               <p className="text-xs text-slate-600 mt-0.5">
-                Prioritized action list: urgent stockouts, imminent run-outs (&lt;7 days), and target deficits.
+                Prioritized replenishment schedule: urgent stockouts and run-rate target deficits from Alerts & Reorder.
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2.5">
             <span className="text-xs font-mono font-bold px-2.5 py-1 rounded bg-slate-100 text-slate-800 border border-slate-200">
-              {sourcingActionQueue.length} Priority SKUs
+              {sourcingActionList.length} Priority SKUs
             </span>
             <Link
               href="/alerts"
@@ -570,101 +604,111 @@ export function ExecutiveOverviewDashboard({ data }: Props) {
                 <th className="py-2.5 px-3 w-[12%]">Priority</th>
                 <th className="py-2.5 px-3 w-[34%]">Product Title & SKU</th>
                 <th className="py-2.5 px-3 w-[12%]">Sourcing</th>
-                <th className="py-2.5 px-3 text-right w-[10%]">DRR (7D)</th>
+                <th className="py-2.5 px-3 text-right w-[10%]">DRR (30D)</th>
                 <th className="py-2.5 px-3 text-right w-[10%]">Current Stock</th>
                 <th className="py-2.5 px-3 text-right w-[10%]">Days Cover</th>
-                <th className="py-2.5 px-3 text-right w-[12%]">Deficit Qty</th>
+                <th className="py-2.5 px-3 text-right w-[12%]">Order Required</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-[13px] leading-5">
-              {sourcingActionQueue.slice(0, 10).map((item) => {
-                const isCritical = item.action_priority === "CRITICAL";
-                const isAttention = item.action_priority === "ATTENTION";
+              {sourcingActionList.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-10 text-center text-xs text-slate-500 font-mono">
+                    All inventory levels are healthy. No replenishment orders required today.
+                  </td>
+                </tr>
+              ) : (
+                sourcingActionList.slice(0, 10).map((item) => {
+                  const cover = getCoverDays30D(item);
+                  const orderRequired = getTargetQty(item);
+                  const isOOS = item.current_stock === 0;
 
-                return (
-                  <tr key={item.sku_code} className="hover:bg-slate-50/80 transition-colors group h-12">
-                    {/* Priority Badge */}
-                    <td className="py-2 px-3 overflow-hidden align-middle">
-                      {isCritical ? (
-                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-bold font-mono bg-rose-50 text-rose-900 border border-rose-200 uppercase">
-                          <span className="w-1.5 h-1.5 rounded-full bg-rose-600" />
-                          CRITICAL
-                        </span>
-                      ) : isAttention ? (
-                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-bold font-mono bg-amber-50 text-amber-950 border border-amber-200 uppercase">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
-                          REORDER
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-bold font-mono bg-slate-100 text-slate-800 border border-slate-200 uppercase">
-                          EXCESS
-                        </span>
-                      )}
-                    </td>
-
-                    {/* Product Name & SKU Stacked */}
-                    <td className="py-2 px-3 overflow-hidden align-middle">
-                      <div className="flex flex-col min-w-0">
-                        <Link
-                          href={`/product/${encodeURIComponent(item.sku_code)}`}
-                          className="truncate block font-semibold text-slate-950 text-[13px] hover:text-indigo-600 hover:underline transition-colors leading-snug"
-                          title={item.name}
-                        >
-                          {item.name}
-                        </Link>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="font-mono text-xs text-slate-700 font-medium">{item.sku_code}</span>
-                          <span className="text-xs font-sans text-slate-600">
-                            • {item.category}
+                  return (
+                    <tr key={item.sku_code} className="hover:bg-slate-50/80 transition-colors group h-12">
+                      {/* Priority Badge */}
+                      <td className="py-2 px-3 overflow-hidden align-middle">
+                        {isOOS ? (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-bold font-mono bg-rose-50 text-rose-900 border border-rose-200 uppercase">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-600" />
+                            CRITICAL
                           </span>
+                        ) : cover < 15 ? (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-bold font-mono bg-orange-50 text-orange-950 border border-orange-200 uppercase">
+                            <span className="w-1.5 h-1.5 rounded-full bg-orange-600" />
+                            CRITICAL
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-bold font-mono bg-amber-50 text-amber-950 border border-amber-200 uppercase">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
+                            REORDER
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Product Name & SKU Stacked */}
+                      <td className="py-2 px-3 overflow-hidden align-middle">
+                        <div className="flex flex-col min-w-0">
+                          <Link
+                            href={`/product/${encodeURIComponent(item.sku_code)}`}
+                            className="truncate block font-semibold text-slate-950 text-[13px] hover:text-indigo-600 hover:underline transition-colors leading-snug"
+                            title={item.name}
+                          >
+                            {item.name}
+                          </Link>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="font-mono text-xs text-slate-700 font-medium">{item.sku_code}</span>
+                            <span className="text-xs font-sans text-slate-600">
+                              • {item.category}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    </td>
+                      </td>
 
-                    {/* Sourcing Channel */}
-                    <td className="py-2 px-3 overflow-hidden align-middle">
-                      <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-slate-100 text-slate-800 border border-slate-200">
-                        {item.sourcing || "MARKET"}
-                      </span>
-                    </td>
-
-                    {/* 7D DRR */}
-                    <td className="py-2 px-3 text-right overflow-hidden align-middle font-mono font-bold text-[13px] text-slate-950">
-                      {item.drr_7d}
-                      <span className="text-xs font-sans font-normal text-slate-600 ml-0.5">/d</span>
-                    </td>
-
-                    {/* Current Stock */}
-                    <td className="py-2 px-3 text-right overflow-hidden align-middle font-mono text-[13px]">
-                      {item.current_stock === 0 ? (
-                        <span className="font-bold text-rose-700">0</span>
-                      ) : (
-                        <span className="font-bold text-slate-950">{formatNumber(item.current_stock)}</span>
-                      )}
-                    </td>
-
-                    {/* Days Cover */}
-                    <td className="py-2 px-3 text-right overflow-hidden align-middle font-mono text-xs">
-                      {item.current_stock === 0 ? (
-                        <span className="text-rose-700 font-bold">0 days</span>
-                      ) : item.days_of_stock < 7 ? (
-                        <span className="font-bold text-amber-900 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                          {item.days_of_stock}d
+                      {/* Sourcing Channel */}
+                      <td className="py-2 px-3 overflow-hidden align-middle">
+                        <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-slate-100 text-slate-800 border border-slate-200">
+                          {item.sourcing || "MARKET"}
                         </span>
-                      ) : (
-                        <span className="text-slate-800 font-semibold">
-                          {item.days_of_stock >= 999 ? "∞" : `${Math.round(item.days_of_stock)}d`}
-                        </span>
-                      )}
-                    </td>
+                      </td>
 
-                    {/* Deficit Qty */}
-                    <td className="py-2 px-3 text-right overflow-hidden align-middle font-mono font-bold text-[13px] text-amber-950">
-                      {item.deficit > 0 ? `+${formatNumber(item.deficit)}` : "—"}
-                    </td>
-                  </tr>
-                );
-              })}
+                      {/* DRR (30D) */}
+                      <td className="py-2 px-3 text-right overflow-hidden align-middle font-mono font-bold text-[13px] text-slate-950">
+                        {item.drr_30d || 0}
+                        <span className="text-xs font-sans font-normal text-slate-600 ml-0.5">/d</span>
+                      </td>
+
+                      {/* Current Stock */}
+                      <td className="py-2 px-3 text-right overflow-hidden align-middle font-mono text-[13px]">
+                        {isOOS ? (
+                          <span className="font-bold text-rose-700">0</span>
+                        ) : (
+                          <span className="font-bold text-slate-950">{formatNumber(item.current_stock)}</span>
+                        )}
+                      </td>
+
+                      {/* Days Cover */}
+                      <td className="py-2 px-3 text-right overflow-hidden align-middle font-mono text-xs">
+                        {isOOS ? (
+                          <span className="text-rose-700 font-bold">0 days</span>
+                        ) : cover < 15 ? (
+                          <span className="font-bold text-orange-950 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-200">
+                            {cover}d
+                          </span>
+                        ) : (
+                          <span className="text-slate-800 font-semibold">
+                            {cover >= 999 ? "∞" : `${cover}d`}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Order Required */}
+                      <td className="py-2 px-3 text-right overflow-hidden align-middle font-mono font-bold text-[13px] text-amber-950">
+                        {orderRequired > 0 ? `+${formatNumber(orderRequired)}` : "—"}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
