@@ -169,8 +169,21 @@ export interface POIssuedRecord {
   created_at: string;
 }
 
+export interface PODoneRecord {
+  sku_code: string;
+  po_no: string;
+  po_date: string;
+  qty_ordered: number;
+  expected_inward: string;
+  notes?: string;
+  done_at: string;
+  remark?: string;
+}
+
 export interface AlertsState {
   ignored: string[];
   poIssued: Record<string, POIssuedRecord>;
+  ignoredRemarks?: Record<string, string>;
+  poDone?: Record<string, PODoneRecord>;
 }
 

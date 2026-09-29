@@ -23,10 +23,11 @@ import {
   Calendar,
   Layers,
   Building2,
-  Check
+  Check,
+  MessageSquare
 } from "lucide-react";
 import { formatNumber, formatDate, cn } from "@/lib/utils";
-import { EnrichedSKUItem, POIssuedRecord, AlertsState } from "@/types";
+import { EnrichedSKUItem, POIssuedRecord, AlertsState, PODoneRecord } from "@/types";
 
 interface Props {
   items: EnrichedSKUItem[];
@@ -34,11 +35,11 @@ interface Props {
 
 export function AlertsClientDashboard({ items }: Props) {
   const searchParams = useSearchParams();
-  const urlFilter = searchParams.get("filter"); // "out_of_stock" | "reorder" | "critical" | "ignored" | "po_issued" | null
+  const urlFilter = searchParams.get("filter"); // "out_of_stock" | "reorder" | "critical" | "ignored" | "po_issued" | "remarks_attentions" | null
 
   // Active navigation tab
   const [activeTab, setActiveTab] = useState<
-    "all" | "out_of_stock" | "critical" | "reorder" | "po_issued" | "ignored"
+    "all" | "out_of_stock" | "critical" | "reorder" | "po_issued" | "ignored" | "remarks_attentions"
   >(
     urlFilter === "out_of_stock"
       ? "out_of_stock"
@@ -50,6 +51,8 @@ export function AlertsClientDashboard({ items }: Props) {
       ? "po_issued"
       : urlFilter === "ignored"
       ? "ignored"
+      : urlFilter === "remarks_attentions"
+      ? "remarks_attentions"
       : "out_of_stock"
   );
 
@@ -60,16 +63,27 @@ export function AlertsClientDashboard({ items }: Props) {
     else if (urlFilter === "reorder") setActiveTab("reorder");
     else if (urlFilter === "po_issued") setActiveTab("po_issued");
     else if (urlFilter === "ignored") setActiveTab("ignored");
+    else if (urlFilter === "remarks_attentions") setActiveTab("remarks_attentions");
   }, [urlFilter]);
 
   // Search and Sourcing Channel filters
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSourcing, setSelectedSourcing] = useState<string>("ALL");
 
-  // Persistent alerts state (Ignored SKUs and PO Issued records)
+  // Persistent alerts state (Ignored SKUs, PO Issued records, Ignored Remarks, and Completed PO records)
   const [ignoredSKUs, setIgnoredSKUs] = useState<Set<string>>(new Set());
   const [poIssuedRecords, setPoIssuedRecords] = useState<Record<string, POIssuedRecord>>({});
+  const [ignoredRemarks, setIgnoredRemarks] = useState<Record<string, string>>({});
+  const [poDoneRecords, setPoDoneRecords] = useState<Record<string, PODoneRecord>>({});
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+
+  // Modal state for Ignoring an SKU with an optional remark
+  const [ignoreModalItem, setIgnoreModalItem] = useState<EnrichedSKUItem | null>(null);
+  const [ignoreRemarkInput, setIgnoreRemarkInput] = useState<string>("");
+
+  // Modal state for Marking PO as Done with an optional remark
+  const [markDoneModalItem, setMarkDoneModalItem] = useState<EnrichedSKUItem | null>(null);
+  const [doneRemarkInput, setDoneRemarkInput] = useState<string>("");
 
   // Modal state for issuing/editing a Purchase Order
   const [poModalItem, setPoModalItem] = useState<EnrichedSKUItem | null>(null);
@@ -107,6 +121,12 @@ export function AlertsClientDashboard({ items }: Props) {
         if (typeof parsed.poIssued === "object" && parsed.poIssued !== null) {
           setPoIssuedRecords(parsed.poIssued);
         }
+        if (typeof parsed.ignoredRemarks === "object" && parsed.ignoredRemarks !== null) {
+          setIgnoredRemarks(parsed.ignoredRemarks);
+        }
+        if (typeof parsed.poDone === "object" && parsed.poDone !== null) {
+          setPoDoneRecords(parsed.poDone);
+        }
       }
     } catch (e) {
       // ignore
@@ -120,6 +140,12 @@ export function AlertsClientDashboard({ items }: Props) {
           if (typeof data.poIssued === "object" && data.poIssued !== null) {
             setPoIssuedRecords(data.poIssued);
           }
+          if (typeof data.ignoredRemarks === "object" && data.ignoredRemarks !== null) {
+            setIgnoredRemarks(data.ignoredRemarks);
+          }
+          if (typeof data.poDone === "object" && data.poDone !== null) {
+            setPoDoneRecords(data.poDone);
+          }
           try {
             localStorage.setItem("warehouse_alerts_actions_v1", JSON.stringify(data));
           } catch (e) {}
@@ -129,9 +155,17 @@ export function AlertsClientDashboard({ items }: Props) {
   }, []);
 
   // Sync state changes to localStorage
-  const updateLocalCache = (ignored: string[], poIssued: Record<string, POIssuedRecord>) => {
+  const updateLocalCache = (
+    ignored: string[],
+    poIssued: Record<string, POIssuedRecord>,
+    rem: Record<string, string> = ignoredRemarks,
+    done: Record<string, PODoneRecord> = poDoneRecords
+  ) => {
     try {
-      localStorage.setItem("warehouse_alerts_actions_v1", JSON.stringify({ ignored, poIssued }));
+      localStorage.setItem(
+        "warehouse_alerts_actions_v1",
+        JSON.stringify({ ignored, poIssued, ignoredRemarks: rem, poDone: done })
+      );
     } catch (e) {}
   };
 
@@ -196,26 +230,95 @@ export function AlertsClientDashboard({ items }: Props) {
     return items.filter((i) => !!poIssuedRecords[i.sku_code]);
   }, [items, poIssuedRecords]);
 
+  // 6. Remarks & Attentions list (SKUs with PO marked Done or Ignored with remark)
+  const remarksAttentionsList = useMemo(() => {
+    const list: EnrichedSKUItem[] = [];
+    const added = new Set<string>();
+
+    const getOrCreateItem = (sku: string): EnrichedSKUItem => {
+      const found = items.find((i) => i.sku_code === sku);
+      if (found) return found;
+      return {
+        sku_code: sku,
+        name: sku,
+        category: "General",
+        brand: "Warehouse",
+        current_stock: 0,
+        sourcing: "MARKET",
+        drr_30d: 0,
+        drr_15d: 0,
+        drr_7d: 0,
+        drr_overall: 0,
+        total_sales_30d: 0,
+        total_sales_15d: 0,
+        total_sales_7d: 0,
+        stock_value: 0,
+        sales_velocity: 0,
+        price: 0
+      } as unknown as EnrichedSKUItem;
+    };
+
+    // 1. Items with PO Marked Done
+    Object.keys(poDoneRecords).forEach((sku) => {
+      if (!added.has(sku)) {
+        added.add(sku);
+        list.push(getOrCreateItem(sku));
+      }
+    });
+
+    // 2. Items Ignored with Remark
+    Object.keys(ignoredRemarks).forEach((sku) => {
+      if (ignoredRemarks[sku] && ignoredSKUs.has(sku)) {
+        if (!added.has(sku)) {
+          added.add(sku);
+          list.push(getOrCreateItem(sku));
+        }
+      }
+    });
+
+    return list;
+  }, [items, poDoneRecords, ignoredRemarks, ignoredSKUs]);
+
   // Action Handlers
-  // 1. Ignore SKU: marks SKU as ignored and removes from all active alerts
-  const handleIgnoreSKU = async (sku_code: string) => {
+  // 1. Open Ignore Modal: asks for optional remark
+  const handleOpenIgnoreModal = (item: EnrichedSKUItem) => {
+    setIgnoreModalItem(item);
+    setIgnoreRemarkInput(ignoredRemarks[item.sku_code] || "");
+  };
+
+  // Confirm Ignore: saves ignore state with remark
+  const handleConfirmIgnore = async () => {
+    if (!ignoreModalItem) return;
+    const sku_code = ignoreModalItem.sku_code;
     setIsSyncing(true);
+
     const updatedIgnored = new Set(ignoredSKUs);
     updatedIgnored.add(sku_code);
     setIgnoredSKUs(updatedIgnored);
+
+    const updatedRemarks = { ...ignoredRemarks };
+    const trimmedRemark = ignoreRemarkInput.trim();
+    if (trimmedRemark) {
+      updatedRemarks[sku_code] = trimmedRemark;
+    } else {
+      delete updatedRemarks[sku_code];
+    }
+    setIgnoredRemarks(updatedRemarks);
 
     const updatedPO = { ...poIssuedRecords };
     delete updatedPO[sku_code];
     setPoIssuedRecords(updatedPO);
 
-    updateLocalCache(Array.from(updatedIgnored), updatedPO);
+    updateLocalCache(Array.from(updatedIgnored), updatedPO, updatedRemarks, poDoneRecords);
     showToast(`SKU ${sku_code} moved to Ignored SKUs.`);
+    setIgnoreModalItem(null);
+    setIgnoreRemarkInput("");
 
     try {
       await fetch("/api/alerts-actions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "ignore", sku_code })
+        body: JSON.stringify({ action: "ignore", sku_code, remark: trimmedRemark })
       });
     } catch (err) {
       console.error("Failed to persist ignore action:", err);
@@ -231,7 +334,11 @@ export function AlertsClientDashboard({ items }: Props) {
     updatedIgnored.delete(sku_code);
     setIgnoredSKUs(updatedIgnored);
 
-    updateLocalCache(Array.from(updatedIgnored), poIssuedRecords);
+    const updatedRemarks = { ...ignoredRemarks };
+    delete updatedRemarks[sku_code];
+    setIgnoredRemarks(updatedRemarks);
+
+    updateLocalCache(Array.from(updatedIgnored), poIssuedRecords, updatedRemarks, poDoneRecords);
     showToast(`SKU ${sku_code} restored to active alerts.`);
 
     try {
@@ -242,6 +349,94 @@ export function AlertsClientDashboard({ items }: Props) {
       });
     } catch (err) {
       console.error("Failed to persist unignore action:", err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // 2b. Open Mark Done Modal for PO
+  const handleOpenMarkDoneModal = (item: EnrichedSKUItem) => {
+    setMarkDoneModalItem(item);
+    setDoneRemarkInput("");
+  };
+
+  // Confirm Mark PO Done: moves from poIssued to poDone and into Remarks / Attentions
+  const handleConfirmMarkDone = async () => {
+    if (!markDoneModalItem) return;
+    const sku_code = markDoneModalItem.sku_code;
+    const existingPo = poIssuedRecords[sku_code];
+    setIsSyncing(true);
+
+    const newDoneRecord: PODoneRecord = {
+      sku_code,
+      po_no: existingPo?.po_no || "PO-DONE",
+      po_date: existingPo?.po_date || new Date().toISOString().substring(0, 10),
+      qty_ordered: existingPo?.qty_ordered || 0,
+      expected_inward: existingPo?.expected_inward || "",
+      notes: existingPo?.notes || "",
+      done_at: new Date().toISOString(),
+      remark: doneRemarkInput.trim()
+    };
+
+    const updatedDone = { ...poDoneRecords, [sku_code]: newDoneRecord };
+    setPoDoneRecords(updatedDone);
+
+    const updatedPO = { ...poIssuedRecords };
+    delete updatedPO[sku_code];
+    setPoIssuedRecords(updatedPO);
+
+    updateLocalCache(Array.from(ignoredSKUs), updatedPO, ignoredRemarks, updatedDone);
+    showToast(`PO ${newDoneRecord.po_no} marked as done and moved to Remarks / Attentions.`);
+    setMarkDoneModalItem(null);
+    setDoneRemarkInput("");
+
+    try {
+      await fetch("/api/alerts-actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "mark_po_done", sku_code, remark: newDoneRecord.remark })
+      });
+    } catch (err) {
+      console.error("Failed to persist mark PO done:", err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // 2c. Reopen PO: restores completed PO back to active PO Issued
+  const handleReopenPO = async (sku_code: string) => {
+    const doneItem = poDoneRecords[sku_code];
+    if (!doneItem) return;
+    setIsSyncing(true);
+
+    const restoredPO: POIssuedRecord = {
+      sku_code: doneItem.sku_code,
+      po_no: doneItem.po_no,
+      po_date: doneItem.po_date,
+      qty_ordered: doneItem.qty_ordered,
+      expected_inward: doneItem.expected_inward,
+      notes: doneItem.notes,
+      created_at: new Date().toISOString()
+    };
+
+    const updatedPO = { ...poIssuedRecords, [sku_code]: restoredPO };
+    setPoIssuedRecords(updatedPO);
+
+    const updatedDone = { ...poDoneRecords };
+    delete updatedDone[sku_code];
+    setPoDoneRecords(updatedDone);
+
+    updateLocalCache(Array.from(ignoredSKUs), updatedPO, ignoredRemarks, updatedDone);
+    showToast(`PO ${restoredPO.po_no} reopened and restored to PO Issued.`);
+
+    try {
+      await fetch("/api/alerts-actions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reopen_po", sku_code })
+      });
+    } catch (err) {
+      console.error("Failed to persist reopen PO:", err);
     } finally {
       setIsSyncing(false);
     }
@@ -352,6 +547,8 @@ export function AlertsClientDashboard({ items }: Props) {
       list = poIssuedList;
     } else if (activeTab === "ignored") {
       list = ignoredList;
+    } else if (activeTab === "remarks_attentions") {
+      list = remarksAttentionsList;
     } else {
       // "all" active alerts
       const set = new Set<string>();
@@ -389,6 +586,15 @@ export function AlertsClientDashboard({ items }: Props) {
       });
     }
 
+    // If Remarks & Attentions, sort by most recent completion / attention
+    if (activeTab === "remarks_attentions") {
+      return list.sort((a, b) => {
+        const timeA = poDoneRecords[a.sku_code]?.done_at || "";
+        const timeB = poDoneRecords[b.sku_code]?.done_at || "";
+        return timeB.localeCompare(timeA);
+      });
+    }
+
     // Otherwise sort by highest 30D DRR, then OOS first
     return list.sort((a, b) => {
       if (a.current_stock === 0 && b.current_stock > 0) return -1;
@@ -402,9 +608,11 @@ export function AlertsClientDashboard({ items }: Props) {
     reorderRequiredList,
     poIssuedList,
     ignoredList,
+    remarksAttentionsList,
     selectedSourcing,
     searchQuery,
-    poIssuedRecords
+    poIssuedRecords,
+    poDoneRecords
   ]);
 
   // Export CSV
@@ -422,13 +630,28 @@ export function AlertsClientDashboard({ items }: Props) {
       "PO Number",
       "PO Date",
       "PO Qty Ordered",
-      "Expected Inward"
+      "Expected Inward",
+      "Remark"
     ];
 
     const rows = filteredList.map((item) => {
       const po = poIssuedRecords[item.sku_code];
+      const poDone = poDoneRecords[item.sku_code];
       const target = getTargetQty(item);
       const cover = getCoverDays30D(item);
+      const remark = poDone?.remark || ignoredRemarks[item.sku_code] || "";
+      const statusText = poDone
+        ? "PO COMPLETED"
+        : po
+        ? "PO ISSUED"
+        : ignoredSKUs.has(item.sku_code)
+        ? "IGNORED"
+        : item.current_stock === 0
+        ? "OUT OF STOCK"
+        : cover < 15
+        ? "CRITICAL"
+        : "REORDER";
+
       return [
         `"${item.sku_code}"`,
         `"${(item.name || "").replace(/"/g, '""')}"`,
@@ -438,11 +661,12 @@ export function AlertsClientDashboard({ items }: Props) {
         item.drr_30d || 0,
         target,
         cover >= 999 ? "N/A" : `${cover}d`,
-        po ? "PO ISSUED" : ignoredSKUs.has(item.sku_code) ? "IGNORED" : item.current_stock === 0 ? "OUT OF STOCK" : cover < 15 ? "CRITICAL" : "REORDER",
-        po ? `"${po.po_no}"` : '""',
-        po ? `"${po.po_date}"` : '""',
-        po ? po.qty_ordered : '""',
-        po ? `"${po.expected_inward}"` : '""'
+        statusText,
+        po ? `"${po.po_no}"` : poDone ? `"${poDone.po_no}"` : '""',
+        po ? `"${po.po_date}"` : poDone ? `"${poDone.po_date}"` : '""',
+        po ? po.qty_ordered : poDone ? poDone.qty_ordered : '""',
+        po ? `"${po.expected_inward}"` : poDone ? `"${poDone.expected_inward}"` : '""',
+        `"${remark.replace(/"/g, '""')}"`
       ];
     });
 
@@ -486,8 +710,8 @@ export function AlertsClientDashboard({ items }: Props) {
         </div>
       </div>
 
-      {/* 1. UPPER 5 DECISION KPI CARDS (Total Deficit Units Removed) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3.5">
+      {/* 1. UPPER 6 DECISION KPI CARDS */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3.5">
         {/* Card 1: Out of Stock */}
         <button
           type="button"
@@ -632,12 +856,41 @@ export function AlertsClientDashboard({ items }: Props) {
             <ArrowRight className="w-3.5 h-3.5 text-slate-700 group-hover:translate-x-0.5 transition-transform" />
           </div>
         </button>
+
+        {/* Card 6: Attentions & Remarks */}
+        <button
+          type="button"
+          onClick={() => setActiveTab("remarks_attentions")}
+          className={cn(
+            "text-left p-3.5 rounded-lg border transition-all relative overflow-hidden group shadow-2xs cursor-pointer flex flex-col justify-between",
+            activeTab === "remarks_attentions"
+              ? "bg-teal-50/40 border-teal-600 ring-2 ring-teal-600/20"
+              : "bg-white border-slate-200 hover:border-slate-400"
+          )}
+        >
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Attentions & Remarks</span>
+              <span className="w-2 h-2 rounded-full bg-teal-600" />
+            </div>
+            <div className="text-3xl font-bold font-mono text-slate-950 mt-1.5">
+              {remarksAttentionsList.length} <span className="text-xs font-bold text-slate-700 uppercase">SKUs</span>
+            </div>
+            <div className="text-xs font-mono text-slate-700 mt-1 font-medium">
+              Completed POs & remarks
+            </div>
+          </div>
+          <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+            <span className="text-slate-600 font-medium">Click to view attentions</span>
+            <ArrowRight className="w-3.5 h-3.5 text-slate-700 group-hover:translate-x-0.5 transition-transform" />
+          </div>
+        </button>
       </div>
 
       {/* 2. NAVIGATION TABS & FILTER BAR */}
       <div className="bg-white rounded-lg border border-slate-200 shadow-2xs overflow-hidden">
         <div className="p-3 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <button
               onClick={() => setActiveTab("out_of_stock")}
               className={cn(
@@ -701,6 +954,19 @@ export function AlertsClientDashboard({ items }: Props) {
             >
               <Ban className="w-4 h-4" />
               <span>Ignored SKUs ({ignoredList.length})</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab("remarks_attentions")}
+              className={cn(
+                "px-3.5 py-2 rounded-md text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
+                activeTab === "remarks_attentions"
+                  ? "bg-teal-700 text-white shadow-2xs"
+                  : "text-slate-700 hover:text-slate-950 hover:bg-slate-200"
+              )}
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>Attentions & Remarks ({remarksAttentionsList.length})</span>
             </button>
 
             <button
@@ -774,8 +1040,8 @@ export function AlertsClientDashboard({ items }: Props) {
             <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold uppercase tracking-wider text-slate-800 select-none">
               <tr>
                 <th className="py-2.5 px-2 w-[3%]">#</th>
-                <th className="py-2.5 px-2 w-[11%]">Status</th>
-                <th className={`py-2.5 px-2 ${activeTab !== "out_of_stock" ? "w-[31%]" : "w-[39%]"}`}>
+                <th className="py-2.5 px-2 w-[12%]">Status</th>
+                <th className={`py-2.5 px-2 ${activeTab !== "out_of_stock" ? "w-[29%]" : "w-[37%]"}`}>
                   Product Name & SKU
                 </th>
                 <th className="py-2.5 px-2 w-[8%]">Sourcing</th>
@@ -784,7 +1050,7 @@ export function AlertsClientDashboard({ items }: Props) {
                   <th className="py-2.5 px-2 text-right w-[8%]">Current Stock</th>
                 )}
                 <th className="py-2.5 px-2 text-right w-[9%]">Target Qty</th>
-                <th className="py-2.5 px-2 text-right w-[20%]">Action</th>
+                <th className="py-2.5 px-2 text-right w-[22%]">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-[13px] leading-5">
@@ -803,7 +1069,9 @@ export function AlertsClientDashboard({ items }: Props) {
                   const coverDays = getCoverDays30D(item);
                   const isOOS = item.current_stock === 0;
                   const poRecord = poIssuedRecords[item.sku_code];
+                  const poDoneRecord = poDoneRecords[item.sku_code];
                   const isIgnored = ignoredSKUs.has(item.sku_code);
+                  const remarkText = poDoneRecord?.remark || ignoredRemarks[item.sku_code] || "";
 
                   return (
                     <tr
@@ -817,7 +1085,17 @@ export function AlertsClientDashboard({ items }: Props) {
 
                       {/* Status */}
                       <td className="py-2 px-2 overflow-hidden align-middle">
-                        {poRecord ? (
+                        {poDoneRecord ? (
+                          <div className="flex flex-col gap-0.5">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold font-mono bg-teal-50 text-teal-900 border border-teal-200 whitespace-nowrap">
+                              <CheckCircle2 className="w-3 h-3 text-teal-700" />
+                              PO COMPLETED
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-600 truncate">
+                              {poDoneRecord.po_no} ({formatNumber(poDoneRecord.qty_ordered)} u)
+                            </span>
+                          </div>
+                        ) : poRecord ? (
                           <div className="flex flex-col gap-0.5">
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold font-mono bg-indigo-50 text-indigo-900 border border-indigo-200 whitespace-nowrap">
                               <FileText className="w-3 h-3 text-indigo-700" />
@@ -867,6 +1145,12 @@ export function AlertsClientDashboard({ items }: Props) {
                               • {item.category}
                             </span>
                           </div>
+                          {remarkText && (
+                            <div className="mt-1 flex items-start gap-1 text-[11px] text-slate-700 bg-amber-50/70 border border-amber-200/80 rounded px-2 py-0.5">
+                              <span className="font-semibold text-amber-900 shrink-0">Remark:</span>
+                              <span className="italic truncate">{remarkText}</span>
+                            </div>
+                          )}
                         </div>
                       </td>
 
@@ -905,7 +1189,19 @@ export function AlertsClientDashboard({ items }: Props) {
 
                       {/* Action Buttons */}
                       <td className="py-2 px-2 text-right overflow-hidden align-middle">
-                        {isIgnored ? (
+                        {poDoneRecord ? (
+                          <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => handleReopenPO(item.sku_code)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-300 transition-colors shadow-2xs cursor-pointer whitespace-nowrap shrink-0"
+                              title="Reopen PO and move back to active PO Issued"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5 text-teal-700" />
+                              <span>Reopen PO</span>
+                            </button>
+                          </div>
+                        ) : isIgnored ? (
                           <button
                             type="button"
                             onClick={() => handleUnignoreSKU(item.sku_code)}
@@ -917,6 +1213,15 @@ export function AlertsClientDashboard({ items }: Props) {
                           </button>
                         ) : poRecord ? (
                           <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenMarkDoneModal(item)}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 transition-colors shadow-2xs cursor-pointer whitespace-nowrap shrink-0"
+                              title="Mark this PO as fulfilled and move to Attentions & Remarks"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
+                              <span>Mark Done</span>
+                            </button>
                             <button
                               type="button"
                               onClick={() => handleOpenPOModal(item)}
@@ -940,7 +1245,7 @@ export function AlertsClientDashboard({ items }: Props) {
                           <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                             <button
                               type="button"
-                              onClick={() => handleIgnoreSKU(item.sku_code)}
+                              onClick={() => handleOpenIgnoreModal(item)}
                               className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 transition-colors shadow-2xs cursor-pointer whitespace-nowrap shrink-0"
                               title="Ignore this SKU from alerts"
                             >
@@ -1105,6 +1410,158 @@ export function AlertsClientDashboard({ items }: Props) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 5. IGNORE SKU REMARK MODAL DIALOG */}
+      {ignoreModalItem && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-2xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Ban className="w-5 h-5 text-slate-700" />
+                <h2 className="text-sm font-bold uppercase tracking-wider text-slate-950">
+                  Ignore SKU
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIgnoreModalItem(null)}
+                className="text-slate-400 hover:text-slate-700 p-1 transition-colors rounded cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-5 space-y-4">
+              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-1">
+                <div className="text-xs font-bold text-slate-950 line-clamp-1">{ignoreModalItem.name}</div>
+                <div className="flex items-center gap-2 text-xs font-mono text-slate-700">
+                  <span className="font-bold text-slate-900">{ignoreModalItem.sku_code}</span>
+                  <span>•</span>
+                  <span>{ignoreModalItem.sourcing || "MARKET"}</span>
+                  <span>•</span>
+                  <span>Stock: {formatNumber(ignoreModalItem.current_stock)}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-800 mb-1">
+                  Reason / Remark <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={ignoreRemarkInput}
+                  onChange={(e) => setIgnoreRemarkInput(e.target.value)}
+                  placeholder="e.g. Discontinued product, Seasonal pause, Supplier delay, Duplicate entry..."
+                  className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-slate-950 text-slate-900"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Remark is optional. Ignored SKUs are excluded from active alerts and kept in the Ignored tab and common Attentions & Remarks list.
+                </p>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIgnoreModalItem(null)}
+                  className="px-3.5 py-1.5 rounded-md border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isSyncing}
+                  onClick={handleConfirmIgnore}
+                  className="px-4 py-1.5 rounded-md bg-slate-800 text-white text-xs font-bold hover:bg-slate-700 transition-colors shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Ban className="w-3.5 h-3.5 text-white" />
+                  <span>Confirm & Ignore</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 6. MARK PO DONE MODAL DIALOG */}
+      {markDoneModalItem && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-2xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                <h2 className="text-sm font-bold uppercase tracking-wider text-slate-950">
+                  Mark Purchase Order as Done
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMarkDoneModalItem(null)}
+                className="text-slate-400 hover:text-slate-700 p-1 transition-colors rounded cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-5 space-y-4">
+              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-1">
+                <div className="text-xs font-bold text-slate-950 line-clamp-1">{markDoneModalItem.name}</div>
+                <div className="flex items-center gap-2 text-xs font-mono text-slate-700">
+                  <span className="font-bold text-indigo-700">{markDoneModalItem.sku_code}</span>
+                  {poIssuedRecords[markDoneModalItem.sku_code] && (
+                    <>
+                      <span>•</span>
+                      <span>{poIssuedRecords[markDoneModalItem.sku_code].po_no}</span>
+                      <span>•</span>
+                      <span>{formatNumber(poIssuedRecords[markDoneModalItem.sku_code].qty_ordered)} units</span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-800 mb-1">
+                  Completion Remark / Inward Note <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={doneRemarkInput}
+                  onChange={(e) => setDoneRemarkInput(e.target.value)}
+                  placeholder="e.g. Received full shipment at Warehouse, GRN verified, partial receipt notes..."
+                  className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-slate-950 text-slate-900"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Marking as done removes this SKU from the active PO Issued pipeline and moves it to Attentions & Remarks for audit/review.
+                </p>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMarkDoneModalItem(null)}
+                  className="px-3.5 py-1.5 rounded-md border border-slate-300 text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isSyncing}
+                  onClick={handleConfirmMarkDone}
+                  className="px-4 py-1.5 rounded-md bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-650 transition-colors shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                  <span>Mark as Done</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

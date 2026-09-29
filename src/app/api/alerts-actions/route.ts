@@ -14,13 +14,15 @@ function readLocalState(): AlertsState {
       const parsed = JSON.parse(raw);
       return {
         ignored: Array.isArray(parsed.ignored) ? parsed.ignored : [],
-        poIssued: typeof parsed.poIssued === "object" && parsed.poIssued !== null ? parsed.poIssued : {}
+        poIssued: typeof parsed.poIssued === "object" && parsed.poIssued !== null ? parsed.poIssued : {},
+        ignoredRemarks: typeof parsed.ignoredRemarks === "object" && parsed.ignoredRemarks !== null ? parsed.ignoredRemarks : {},
+        poDone: typeof parsed.poDone === "object" && parsed.poDone !== null ? parsed.poDone : {}
       };
     }
   } catch (err) {
     console.error("Error reading local alerts state:", err);
   }
-  return { ignored: [], poIssued: {} };
+  return { ignored: [], poIssued: {}, ignoredRemarks: {}, poDone: {} };
 }
 
 function writeLocalState(state: AlertsState) {
@@ -47,7 +49,9 @@ async function getAlertsState(): Promise<AlertsState> {
       const parsed = JSON.parse(data.error_message);
       return {
         ignored: Array.isArray(parsed.ignored) ? parsed.ignored : [],
-        poIssued: typeof parsed.poIssued === "object" && parsed.poIssued !== null ? parsed.poIssued : {}
+        poIssued: typeof parsed.poIssued === "object" && parsed.poIssued !== null ? parsed.poIssued : {},
+        ignoredRemarks: typeof parsed.ignoredRemarks === "object" && parsed.ignoredRemarks !== null ? parsed.ignoredRemarks : {},
+        poDone: typeof parsed.poDone === "object" && parsed.poDone !== null ? parsed.poDone : {}
       };
     }
   } catch (err) {
@@ -93,12 +97,48 @@ export async function POST(req: NextRequest) {
       if (!currentState.ignored.includes(sku_code)) {
         currentState.ignored.push(sku_code);
       }
-      // If it had a PO, we leave it or remove it
+      if (!currentState.ignoredRemarks) currentState.ignoredRemarks = {};
+      if (body.remark && typeof body.remark === "string" && body.remark.trim()) {
+        currentState.ignoredRemarks[sku_code] = body.remark.trim();
+      } else {
+        delete currentState.ignoredRemarks[sku_code];
+      }
       delete currentState.poIssued[sku_code];
       updated = true;
     } else if (action === "unignore" && sku_code) {
       currentState.ignored = currentState.ignored.filter((s) => s !== sku_code);
+      if (currentState.ignoredRemarks) delete currentState.ignoredRemarks[sku_code];
       updated = true;
+    } else if (action === "mark_po_done" && sku_code) {
+      if (!currentState.poDone) currentState.poDone = {};
+      const currentPo = currentState.poIssued[sku_code];
+      currentState.poDone[sku_code] = {
+        sku_code,
+        po_no: currentPo?.po_no || body.po_no || "PO-DONE",
+        po_date: currentPo?.po_date || new Date().toISOString().substring(0, 10),
+        qty_ordered: currentPo?.qty_ordered || 0,
+        expected_inward: currentPo?.expected_inward || "",
+        notes: currentPo?.notes || "",
+        done_at: new Date().toISOString(),
+        remark: (body.remark || "").trim()
+      };
+      delete currentState.poIssued[sku_code];
+      updated = true;
+    } else if (action === "reopen_po" && sku_code) {
+      if (currentState.poDone && currentState.poDone[sku_code]) {
+        const doneItem = currentState.poDone[sku_code];
+        currentState.poIssued[sku_code] = {
+          sku_code: doneItem.sku_code,
+          po_no: doneItem.po_no,
+          po_date: doneItem.po_date,
+          qty_ordered: doneItem.qty_ordered,
+          expected_inward: doneItem.expected_inward,
+          notes: doneItem.notes,
+          created_at: new Date().toISOString()
+        };
+        delete currentState.poDone[sku_code];
+        updated = true;
+      }
     } else if (action === "issue_po" && po && po.sku_code) {
       currentState.poIssued[po.sku_code] = {
         sku_code: po.sku_code,
@@ -111,6 +151,8 @@ export async function POST(req: NextRequest) {
       };
       // Ensure it is not in ignored
       currentState.ignored = currentState.ignored.filter((s) => s !== po.sku_code);
+      if (currentState.ignoredRemarks) delete currentState.ignoredRemarks[po.sku_code];
+      if (currentState.poDone) delete currentState.poDone[po.sku_code];
       updated = true;
     } else if (action === "cancel_po" && sku_code) {
       delete currentState.poIssued[sku_code];
@@ -118,6 +160,8 @@ export async function POST(req: NextRequest) {
     } else if (action === "sync_full" && body.state) {
       currentState.ignored = Array.isArray(body.state.ignored) ? body.state.ignored : currentState.ignored;
       currentState.poIssued = typeof body.state.poIssued === "object" ? body.state.poIssued : currentState.poIssued;
+      currentState.ignoredRemarks = typeof body.state.ignoredRemarks === "object" ? body.state.ignoredRemarks : currentState.ignoredRemarks;
+      currentState.poDone = typeof body.state.poDone === "object" ? body.state.poDone : currentState.poDone;
       updated = true;
     }
 
