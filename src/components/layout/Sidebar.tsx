@@ -87,6 +87,7 @@ export function Sidebar() {
             <Link
               key={item.name}
               href={item.href}
+              prefetch={true}
               title={!isExpanded ? item.name : undefined}
               className={cn(
                 "group flex items-center rounded-lg text-[13px] font-semibold transition-colors duration-100",

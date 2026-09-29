@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 import fs from "fs";
 import path from "path";
 import { AlertsState, POIssuedRecord } from "@/types";
+import { invalidateWarehouseIntelligenceCache } from "@/lib/analytics";
 
 const LOCAL_DATA_FILE = path.join(process.cwd(), "data", "alerts_state.json");
 
@@ -122,6 +123,7 @@ export async function POST(req: NextRequest) {
 
     if (updated) {
       await saveAlertsState(currentState);
+      invalidateWarehouseIntelligenceCache();
     }
 
     return NextResponse.json({ success: true, state: currentState });

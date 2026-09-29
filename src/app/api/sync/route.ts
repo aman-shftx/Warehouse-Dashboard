@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { syncAllSheets, syncStockSheet, syncInwardData, syncOutwardData, syncSKUCatalog } from "@/lib/sync/sync-service";
+import { invalidateWarehouseIntelligenceCache } from "@/lib/analytics";
 
 export const maxDuration = 300; // Allow up to 5 minutes on Vercel Pro if needed
 export const dynamic = "force-dynamic";
@@ -19,6 +21,16 @@ async function executeSync(sheet: string | null) {
   } else {
     results = await syncAllSheets();
   }
+
+  // Purge intelligence caches so fresh data is loaded on the next view
+  invalidateWarehouseIntelligenceCache();
+  try {
+    revalidatePath("/");
+    revalidatePath("/analytics");
+    revalidatePath("/alerts");
+    revalidatePath("/inventory");
+    revalidatePath("/movement");
+  } catch (e) {}
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(2);
   return {

@@ -14,7 +14,41 @@ import {
 } from "@/types";
 import { calculateAlertsMetrics } from "@/lib/alerts-engine";
 
+let cachedData: { data: ExecutiveOverviewData; expiresAt: number } | null = null;
+let inFlightPromise: Promise<ExecutiveOverviewData> | null = null;
+const CACHE_TTL_MS = 60 * 1000; // 60 seconds TTL
+
+export function invalidateWarehouseIntelligenceCache() {
+  cachedData = null;
+}
+
 export async function getWarehouseIntelligence(): Promise<ExecutiveOverviewData> {
+  const now = Date.now();
+  if (cachedData && cachedData.expiresAt > now) {
+    return cachedData.data;
+  }
+
+  if (inFlightPromise) {
+    return inFlightPromise;
+  }
+
+  inFlightPromise = (async () => {
+    try {
+      const data = await computeWarehouseIntelligence();
+      cachedData = {
+        data,
+        expiresAt: Date.now() + CACHE_TTL_MS,
+      };
+      return data;
+    } finally {
+      inFlightPromise = null;
+    }
+  })();
+
+  return inFlightPromise;
+}
+
+async function computeWarehouseIntelligence(): Promise<ExecutiveOverviewData> {
   // 1. Fetch metadata and latest operational dates concurrently
   const [
     { data: dsLatest },

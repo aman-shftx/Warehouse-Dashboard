@@ -2,8 +2,7 @@ import { Suspense } from "react";
 import { getWarehouseIntelligence } from "@/lib/analytics";
 import { ExecutiveOverviewDashboard } from "@/components/dashboard/ExecutiveOverviewDashboard";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const revalidate = 60;
 
 export default async function OverviewPage() {
   const intelligenceData = await getWarehouseIntelligence();

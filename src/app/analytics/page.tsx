@@ -2,8 +2,7 @@ import { Suspense } from "react";
 import { getWarehouseIntelligence } from "@/lib/analytics";
 import { AnalyticsClientDashboard } from "@/components/dashboard/AnalyticsClientDashboard";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const revalidate = 60;
 
 export default async function AnalyticsPage() {
   const data = await getWarehouseIntelligence();
