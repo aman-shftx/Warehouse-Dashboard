@@ -16,6 +16,7 @@ import {
   PackageX
 } from "lucide-react";
 import { notFound } from "next/navigation";
+import { ProductBackButton } from "@/components/dashboard/ProductBackButton";
 
 export const revalidate = 60;
 
@@ -28,37 +29,55 @@ interface Props {
 export default async function ProductDetailPage({ params }: Props) {
   const decodedSku = decodeURIComponent(params.sku);
 
-  // 1. Fetch product master info
-  const { data: product } = await supabaseAdmin
-    .from("products")
-    .select("*")
-    .eq("sku_code", decodedSku)
-    .single();
+  // 1. Fetch product master info and daily stock history concurrently
+  const [
+    { data: product },
+    { data: stockHistory }
+  ] = await Promise.all([
+    supabaseAdmin
+      .from("products")
+      .select("*")
+      .eq("sku_code", decodedSku)
+      .single(),
+    supabaseAdmin
+      .from("daily_stock")
+      .select("date, quantity")
+      .eq("sku_code", decodedSku)
+      .order("date", { ascending: true })
+  ]);
 
   if (!product) {
     notFound();
   }
 
-  // 2. Fetch daily stock history
-  const { data: stockHistory } = await supabaseAdmin
-    .from("daily_stock")
-    .select("date, quantity")
-    .eq("sku_code", decodedSku)
-    .order("date", { ascending: true });
-
   const currentStock = stockHistory && stockHistory.length > 0
     ? stockHistory[stockHistory.length - 1].quantity
     : 0;
 
-  // 3. Fetch inward history and outward history
+  // 2. Define 30-day calendar date array ending on Today
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+  const past30Days: string[] = [];
+  for (let i = 0; i < 30; i++) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    const dStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    past30Days.push(dStr);
+  }
+
+  const d30Start = `${past30Days[29]}T00:00:00.000Z`;
+  const todayEnd = `${todayStr}T23:59:59.999Z`;
+
   const skuFilter = product.old_sku_code
     ? `sku_code.eq.${decodedSku},sku_code.eq.${product.old_sku_code}`
     : `sku_code.eq.${decodedSku}`;
 
+  // 3. Fetch inward history, outward history, and 30D outward concurrently in a single roundtrip
   const [
     { data: inwardHistory },
     { data: outwardHistory },
-    { data: latestOutwardRow }
+    { data: outward30d }
   ] = await Promise.all([
     supabaseAdmin
       .from("inward_transactions")
@@ -74,32 +93,11 @@ export default async function ProductDetailPage({ params }: Props) {
       .limit(30),
     supabaseAdmin
       .from("outward_transactions")
-      .select("date")
-      .order("date", { ascending: false })
-      .limit(1)
+      .select("quantity, date")
+      .or(skuFilter)
+      .gte("date", d30Start)
+      .lte("date", todayEnd)
   ]);
-
-  // 4. Compute 7D, 14D & 30D outward and DRR anchored on Today
-  const now = new Date();
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-
-  const past30Days: string[] = [];
-  for (let i = 0; i < 30; i++) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    const dStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    past30Days.push(dStr);
-  }
-
-  const d30Start = `${past30Days[29]}T00:00:00.000Z`;
-  const todayEnd = `${todayStr}T23:59:59.999Z`;
-
-  const { data: outward30d } = await supabaseAdmin
-    .from("outward_transactions")
-    .select("quantity, date")
-    .or(skuFilter)
-    .gte("date", d30Start)
-    .lte("date", todayEnd);
 
   const dateToDayIndex = new Map<string, number>();
   past30Days.forEach((dStr, idx) => dateToDayIndex.set(dStr, idx));
@@ -166,13 +164,7 @@ export default async function ProductDetailPage({ params }: Props) {
     <div className="space-y-4 max-w-[1700px] mx-auto pb-12">
       {/* Breadcrumb Navigation */}
       <div className="flex items-center gap-2 text-xs text-slate-500">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-1 font-medium hover:text-indigo-600 transition-colors duration-100"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Back to Home</span>
-        </Link>
+        <ProductBackButton fallbackHref="/inventory" label="Back" />
         <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
         <span className="font-mono text-slate-700 font-semibold">{product.sku_code}</span>
       </div>

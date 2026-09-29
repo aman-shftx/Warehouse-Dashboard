@@ -346,6 +346,7 @@ export function StockTable({ items, categories, sourcings }: Props) {
                     <td className="py-1.5 px-3 font-mono text-[12px] font-semibold text-slate-900 whitespace-nowrap">
                       <Link
                         href={`/product/${encodeURIComponent(item.sku_code)}`}
+                        prefetch={true}
                         className="hover:text-indigo-600 hover:underline"
                       >
                         {item.sku_code}
@@ -420,6 +421,7 @@ export function StockTable({ items, categories, sourcings }: Props) {
                     <td className="py-1.5 px-3 text-right whitespace-nowrap">
                       <Link
                         href={`/product/${encodeURIComponent(item.sku_code)}`}
+                        prefetch={true}
                         className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 hover:text-indigo-600 transition-colors p-1"
                       >
                         <span>Details</span>
