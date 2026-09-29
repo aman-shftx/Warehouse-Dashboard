@@ -167,11 +167,11 @@ export default async function ProductDetailPage({ params }: Props) {
       {/* Breadcrumb Navigation */}
       <div className="flex items-center gap-2 text-xs text-slate-500">
         <Link
-          href="/inventory"
+          href="/"
           className="inline-flex items-center gap-1 font-medium hover:text-indigo-600 transition-colors duration-100"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
-          <span>Inventory</span>
+          <span>Back to Home</span>
         </Link>
         <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
         <span className="font-mono text-slate-700 font-semibold">{product.sku_code}</span>
