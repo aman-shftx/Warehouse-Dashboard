@@ -490,7 +490,11 @@ export function AlertsClientDashboard({ items }: Props) {
     updatedIgnored.delete(poModalItem.sku_code);
     setIgnoredSKUs(updatedIgnored);
 
-    updateLocalCache(Array.from(updatedIgnored), updatedPO);
+    const updatedDone = { ...poDoneRecords };
+    delete updatedDone[poModalItem.sku_code];
+    setPoDoneRecords(updatedDone);
+
+    updateLocalCache(Array.from(updatedIgnored), updatedPO, ignoredRemarks, updatedDone);
     showToast(`PO ${newRecord.po_no} issued for ${poModalItem.sku_code}. Moved to PO Issued.`);
     setPoModalItem(null);
 
@@ -1085,7 +1089,7 @@ export function AlertsClientDashboard({ items }: Props) {
 
                       {/* Status */}
                       <td className="py-2 px-2 overflow-hidden align-middle">
-                        {poDoneRecord ? (
+                        {activeTab === "remarks_attentions" && poDoneRecord ? (
                           <div className="flex flex-col gap-0.5">
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold font-mono bg-teal-50 text-teal-900 border border-teal-200 whitespace-nowrap">
                               <CheckCircle2 className="w-3 h-3 text-teal-700" />
@@ -1189,7 +1193,7 @@ export function AlertsClientDashboard({ items }: Props) {
 
                       {/* Action Buttons */}
                       <td className="py-2 px-2 text-right overflow-hidden align-middle">
-                        {poDoneRecord ? (
+                        {activeTab === "remarks_attentions" && poDoneRecord ? (
                           <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                             <button
                               type="button"
