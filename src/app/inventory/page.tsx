@@ -46,6 +46,8 @@ async function InventoryDataStreamer() {
       categories={Array.from(catSet).sort()}
       sourcings={Array.from(sourcingSet).sort()}
       initialTrendData={intel.macroTrend}
+      rawItems={intel.items}
+      initialAlertsState={intel.alertsState}
     />
   );
 }

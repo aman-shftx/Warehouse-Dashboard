@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   AlertOctagon,
   AlertTriangle,
@@ -11,6 +11,7 @@ import {
   Search,
   X,
   ArrowRight,
+  ArrowLeft,
   Filter,
   Flame,
   CheckCircle2,
@@ -31,11 +32,15 @@ import { EnrichedSKUItem, POIssuedRecord, AlertsState, PODoneRecord } from "@/ty
 
 interface Props {
   items: EnrichedSKUItem[];
+  initialFilter?: string | null;
+  initialFrom?: string | null;
 }
 
-export function AlertsClientDashboard({ items }: Props) {
+export function AlertsClientDashboard({ items, initialFilter, initialFrom }: Props) {
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const urlFilter = searchParams.get("filter"); // "out_of_stock" | "reorder" | "critical" | "ignored" | "po_issued" | "remarks_attentions" | null
+  const urlFilter = searchParams.get("filter") || initialFilter;
+  const fromOrigin = searchParams.get("from") || initialFrom;
 
   // Active navigation tab
   const [activeTab, setActiveTab] = useState<
@@ -698,6 +703,27 @@ export function AlertsClientDashboard({ items }: Props) {
             className="ml-2 text-slate-400 hover:text-white"
           >
             <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Back to Origin Navigation */}
+      {fromOrigin && (
+        <div className="pt-1">
+          <button
+            type="button"
+            onClick={() => {
+              if (typeof window !== "undefined" && window.history.length > 1) {
+                router.back();
+              } else {
+                router.push(fromOrigin);
+              }
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200/90 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 hover:text-indigo-600 shadow-2xs transition-colors group cursor-pointer"
+            title={`Go back to ${fromOrigin === "/inventory" ? "Inventory" : fromOrigin === "/" ? "Overview" : "previous page"}`}
+          >
+            <ArrowLeft className="w-3.5 h-3.5 text-slate-500 group-hover:text-indigo-600 group-hover:-translate-x-0.5 transition-transform" />
+            <span>Back to {fromOrigin === "/inventory" ? "Inventory" : fromOrigin === "/" ? "Overview" : "Previous Page"}</span>
           </button>
         </div>
       )}

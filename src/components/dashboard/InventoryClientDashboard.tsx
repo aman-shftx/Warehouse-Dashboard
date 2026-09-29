@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { StatsCards } from "./StatsCards";
 import { StockChart } from "./StockChart";
 import { StockTable, TableItem } from "./StockTable";
 import { useSearch } from "@/components/layout/SearchContext";
 import { X, Layers } from "lucide-react";
+import { calculateAlertsMetrics } from "@/lib/alerts-engine";
+import { EnrichedSKUItem, AlertsState, POIssuedRecord } from "@/types";
 
 interface DataPoint {
   date: string;
@@ -27,6 +29,8 @@ interface Props {
   categories: string[];
   sourcings: string[];
   initialTrendData: DataPoint[];
+  rawItems?: EnrichedSKUItem[];
+  initialAlertsState?: AlertsState;
 }
 
 export function InventoryClientDashboard({
@@ -35,8 +39,59 @@ export function InventoryClientDashboard({
   categories,
   sourcings,
   initialTrendData,
+  rawItems,
+  initialAlertsState,
 }: Props) {
   const { searchQuery, setSearchQuery } = useSearch();
+
+  // Dynamic alerts synchronization with single source of truth
+  const [ignoredSKUs, setIgnoredSKUs] = useState<Set<string>>(
+    () => new Set(initialAlertsState?.ignored || [])
+  );
+  const [poIssuedRecords, setPoIssuedRecords] = useState<Record<string, POIssuedRecord>>(
+    () => initialAlertsState?.poIssued || {}
+  );
+
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem("warehouse_alerts_actions_v1");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed.ignored)) setIgnoredSKUs(new Set(parsed.ignored));
+        if (typeof parsed.poIssued === "object" && parsed.poIssued !== null) {
+          setPoIssuedRecords(parsed.poIssued);
+        }
+      }
+    } catch (e) {}
+
+    fetch("/api/alerts-actions")
+      .then((res) => res.json())
+      .then((fresh) => {
+        if (fresh && !fresh.error) {
+          if (Array.isArray(fresh.ignored)) setIgnoredSKUs(new Set(fresh.ignored));
+          if (typeof fresh.poIssued === "object" && fresh.poIssued !== null) {
+            setPoIssuedRecords(fresh.poIssued);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const liveAlertsMetrics = useMemo(() => {
+    if (rawItems && rawItems.length > 0) {
+      return calculateAlertsMetrics(rawItems, ignoredSKUs, poIssuedRecords);
+    }
+    return null;
+  }, [rawItems, ignoredSKUs, poIssuedRecords]);
+
+  const liveStats = useMemo(() => {
+    if (!liveAlertsMetrics) return stats;
+    return {
+      ...stats,
+      outOfStock: liveAlertsMetrics.oosCount,
+      lowStock: liveAlertsMetrics.reorderCount,
+    };
+  }, [stats, liveAlertsMetrics]);
   const [skuTrend, setSkuTrend] = useState<{
     sku: string;
     productName: string;
@@ -101,14 +156,14 @@ export function InventoryClientDashboard({
 
   return (
     <div className="space-y-4 max-w-[1500px] mx-auto">
-      {/* KPI Stats Grid */}
+      {/* KPI Stats Grid - Dynamically synced with Alerts & Reorders Single Source of Truth */}
       <StatsCards
-        totalSKUs={stats.totalSKUs}
-        totalStock={stats.totalStock}
-        outOfStock={stats.outOfStock}
-        lowStock={stats.lowStock}
-        categoriesCount={stats.categoriesCount}
-        lastSyncedAt={stats.lastSyncedAt}
+        totalSKUs={liveStats.totalSKUs}
+        totalStock={liveStats.totalStock}
+        outOfStock={liveStats.outOfStock}
+        lowStock={liveStats.lowStock}
+        categoriesCount={liveStats.categoriesCount}
+        lastSyncedAt={liveStats.lastSyncedAt}
       />
 
       {/* Stock Trend Chart - Dynamic: SKU history when searched, or overall warehouse total */}

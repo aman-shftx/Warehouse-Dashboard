@@ -473,7 +473,7 @@ export function ExecutiveOverviewDashboard({ data }: Props) {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
             {/* 1. Out of Stock */}
             <Link
-              href="/alerts?filter=out_of_stock"
+              href="/alerts?filter=out_of_stock&from=/"
               className="p-3 rounded-lg bg-rose-50/20 border border-rose-200/90 hover:border-rose-400 transition-colors shadow-2xs group"
             >
               <div className="flex items-center justify-between">
@@ -488,7 +488,7 @@ export function ExecutiveOverviewDashboard({ data }: Props) {
 
             {/* 2. Reorder Required */}
             <Link
-              href="/alerts?filter=reorder"
+              href="/alerts?filter=reorder&from=/"
               className="p-3 rounded-lg bg-amber-50/20 border border-amber-200/90 hover:border-amber-400 transition-colors shadow-2xs group"
             >
               <div className="flex items-center justify-between">
@@ -503,7 +503,7 @@ export function ExecutiveOverviewDashboard({ data }: Props) {
 
             {/* 3. Critical Required */}
             <Link
-              href="/alerts?filter=critical"
+              href="/alerts?filter=critical&from=/"
               className="p-3 rounded-lg bg-orange-50/20 border border-orange-200/90 hover:border-orange-400 transition-colors shadow-2xs group"
             >
               <div className="flex items-center justify-between">
@@ -518,7 +518,7 @@ export function ExecutiveOverviewDashboard({ data }: Props) {
 
             {/* 4. Dead Stock */}
             <Link
-              href="/analytics?tab=dead_stock"
+              href="/analytics?tab=dead_stock&from=/"
               className="p-3 rounded-lg bg-white border border-slate-200 hover:border-slate-300 transition-colors shadow-2xs group"
             >
               <div className="flex items-center justify-between">
@@ -533,7 +533,7 @@ export function ExecutiveOverviewDashboard({ data }: Props) {
 
             {/* 5. Ignored SKU */}
             <Link
-              href="/alerts?filter=ignored"
+              href="/alerts?filter=ignored&from=/"
               className="p-3 rounded-lg bg-slate-50/50 border border-slate-200 hover:border-slate-400 transition-colors shadow-2xs group"
             >
               <div className="flex items-center justify-between">
@@ -548,7 +548,7 @@ export function ExecutiveOverviewDashboard({ data }: Props) {
 
             {/* 6. PO Issued SKU */}
             <Link
-              href="/alerts?filter=po_issued"
+              href="/alerts?filter=po_issued&from=/"
               className="p-3 rounded-lg bg-indigo-50/20 border border-indigo-200/90 hover:border-indigo-400 transition-colors shadow-2xs group"
             >
               <div className="flex items-center justify-between">
