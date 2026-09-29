@@ -11,7 +11,7 @@ interface SidebarContextType {
 const SidebarContext = createContext<SidebarContextType | undefined>(undefined);
 
 export function SidebarProvider({ children }: { children: React.ReactNode }) {
-  const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(true);
   const [mounted, setMounted] = useState<boolean>(false);
 
   useEffect(() => {
@@ -20,6 +20,8 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       const saved = localStorage.getItem("warehouse_sidebar_collapsed");
       if (saved !== null) {
         setIsCollapsed(saved === "true");
+      } else {
+        setIsCollapsed(true);
       }
     } catch {
       // LocalStorage unavailable
