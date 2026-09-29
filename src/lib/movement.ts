@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase/server";
+import { unstable_cache, revalidateTag } from "next/cache";
 
 export interface MovementItem {
   category: string;
@@ -27,7 +28,28 @@ export interface MovementDataResponse {
   inward: MovementSectionData;
 }
 
+export function invalidateInventoryMovementCache() {
+  try {
+    revalidateTag("movement-data");
+  } catch (e) {}
+}
+
+const getCachedInventoryMovement = (days: number) =>
+  unstable_cache(
+    async () => computeInventoryMovement(days),
+    [`movement-data-${days}`],
+    {
+      tags: ["movement-data", `movement-data-${days}`],
+      revalidate: 3600,
+    }
+  )();
+
 export async function getInventoryMovement(days: number = 1): Promise<MovementDataResponse> {
+  const numDays = Math.min(90, Math.max(1, days));
+  return getCachedInventoryMovement(numDays);
+}
+
+async function computeInventoryMovement(days: number): Promise<MovementDataResponse> {
   const numDays = Math.max(1, days);
 
   // 1. Get the latest available recorded date

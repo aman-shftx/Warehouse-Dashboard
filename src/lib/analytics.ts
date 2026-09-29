@@ -13,14 +13,30 @@ import {
   AlertsState
 } from "@/types";
 import { calculateAlertsMetrics } from "@/lib/alerts-engine";
+import { unstable_cache, revalidateTag } from "next/cache";
 
 let cachedData: { data: ExecutiveOverviewData; expiresAt: number } | null = null;
-let inFlightPromise: Promise<ExecutiveOverviewData> | null = null;
-const CACHE_TTL_MS = 60 * 1000; // 60 seconds TTL
+const CACHE_TTL_MS = 60 * 1000; // 60 seconds memory L1 TTL
 
 export function invalidateWarehouseIntelligenceCache() {
   cachedData = null;
+  try {
+    revalidateTag("warehouse-intelligence");
+  } catch (e) {
+    // Graceful fallback when called outside active request
+  }
 }
+
+const getCachedIntelligence = unstable_cache(
+  async () => {
+    return await computeWarehouseIntelligence();
+  },
+  ["warehouse-intelligence-data"],
+  {
+    tags: ["warehouse-intelligence"],
+    revalidate: 3600, // 1 hour fallback; purged immediately on sync/actions
+  }
+);
 
 export async function getWarehouseIntelligence(): Promise<ExecutiveOverviewData> {
   const now = Date.now();
@@ -28,24 +44,12 @@ export async function getWarehouseIntelligence(): Promise<ExecutiveOverviewData>
     return cachedData.data;
   }
 
-  if (inFlightPromise) {
-    return inFlightPromise;
-  }
-
-  inFlightPromise = (async () => {
-    try {
-      const data = await computeWarehouseIntelligence();
-      cachedData = {
-        data,
-        expiresAt: Date.now() + CACHE_TTL_MS,
-      };
-      return data;
-    } finally {
-      inFlightPromise = null;
-    }
-  })();
-
-  return inFlightPromise;
+  const data = await getCachedIntelligence();
+  cachedData = {
+    data,
+    expiresAt: Date.now() + CACHE_TTL_MS,
+  };
+  return data;
 }
 
 async function computeWarehouseIntelligence(): Promise<ExecutiveOverviewData> {

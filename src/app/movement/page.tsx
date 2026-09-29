@@ -1,15 +1,19 @@
 import { Suspense } from "react";
 import { getInventoryMovement } from "@/lib/movement";
 import { MovementDashboard } from "@/components/dashboard/MovementDashboard";
+import { MovementSkeleton } from "@/components/dashboard/MovementSkeleton";
 
 export const revalidate = 60; // Cache for 60 seconds
 
-export default async function MovementPage() {
+async function MovementDataStreamer() {
   const movementData = await getInventoryMovement(1);
+  return <MovementDashboard initialData={movementData} />;
+}
 
+export default function MovementPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center text-xs text-slate-400">Loading Movement Trackers...</div>}>
-      <MovementDashboard initialData={movementData} />
+    <Suspense fallback={<MovementSkeleton />}>
+      <MovementDataStreamer />
     </Suspense>
   );
 }

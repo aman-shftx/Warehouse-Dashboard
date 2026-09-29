@@ -1,10 +1,11 @@
 import { Suspense } from "react";
 import { getWarehouseIntelligence } from "@/lib/analytics";
 import { InventoryClientDashboard } from "@/components/dashboard/InventoryClientDashboard";
+import { TableSkeleton } from "@/components/dashboard/TableSkeleton";
 
 export const revalidate = 60; // Cache for 60 seconds
 
-export default async function InventoryPage() {
+async function InventoryDataStreamer() {
   const intel = await getWarehouseIntelligence();
 
   const catSet = new Set<string>();
@@ -39,14 +40,20 @@ export default async function InventoryPage() {
   };
 
   return (
-    <Suspense fallback={<div className="p-8 text-center text-xs text-slate-400">Loading Inventory Catalog...</div>}>
-      <InventoryClientDashboard
-        items={tableItems}
-        stats={stats}
-        categories={Array.from(catSet).sort()}
-        sourcings={Array.from(sourcingSet).sort()}
-        initialTrendData={intel.macroTrend}
-      />
+    <InventoryClientDashboard
+      items={tableItems}
+      stats={stats}
+      categories={Array.from(catSet).sort()}
+      sourcings={Array.from(sourcingSet).sort()}
+      initialTrendData={intel.macroTrend}
+    />
+  );
+}
+
+export default function InventoryPage() {
+  return (
+    <Suspense fallback={<TableSkeleton title="Loading Inventory Catalog..." />}>
+      <InventoryDataStreamer />
     </Suspense>
   );
 }

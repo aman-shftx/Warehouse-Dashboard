@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import crypto from "crypto";
 import { syncAllSheets, syncStockSheet, syncInwardData, syncOutwardData, syncSKUCatalog } from "@/lib/sync/sync-service";
 import { invalidateWarehouseIntelligenceCache } from "@/lib/analytics";
+import { invalidateInventoryMovementCache } from "@/lib/movement";
 
 export const maxDuration = 300; // Allow up to 5 minutes on Vercel Pro if needed
 export const dynamic = "force-dynamic";
@@ -23,9 +24,14 @@ async function executeSync(sheet: string | null) {
     results = await syncAllSheets();
   }
 
-  // Purge intelligence caches so fresh data is loaded on the next view
+  // Purge intelligence and movement caches so fresh data is loaded on the next view
   invalidateWarehouseIntelligenceCache();
+  invalidateInventoryMovementCache();
   try {
+    revalidateTag("warehouse-intelligence");
+    revalidateTag("movement-data");
+    revalidateTag("product-catalog");
+    revalidatePath("/", "layout");
     revalidatePath("/");
     revalidatePath("/analytics");
     revalidatePath("/alerts");

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import fs from "fs";
 import path from "path";
@@ -219,6 +220,10 @@ export async function POST(req: NextRequest) {
     if (updated) {
       await saveAlertsState(currentState);
       invalidateWarehouseIntelligenceCache();
+      try {
+        revalidatePath("/");
+        revalidatePath("/alerts");
+      } catch (e) {}
     }
 
     return NextResponse.json({ success: true, state: currentState });

@@ -1,15 +1,19 @@
 import { Suspense } from "react";
 import { getWarehouseIntelligence } from "@/lib/analytics";
 import { AlertsClientDashboard } from "@/components/dashboard/AlertsClientDashboard";
+import { TableSkeleton } from "@/components/dashboard/TableSkeleton";
 
 export const revalidate = 60;
 
-export default async function AlertsPage() {
+async function AlertsDataStreamer() {
   const { items } = await getWarehouseIntelligence();
+  return <AlertsClientDashboard items={items} />;
+}
 
+export default function AlertsPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center text-xs text-slate-400">Loading Alerts & Reorder Schedule...</div>}>
-      <AlertsClientDashboard items={items} />
+    <Suspense fallback={<TableSkeleton title="Loading Alerts & Reorder Schedule..." />}>
+      <AlertsDataStreamer />
     </Suspense>
   );
 }

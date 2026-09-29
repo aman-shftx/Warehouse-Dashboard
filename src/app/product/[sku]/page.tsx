@@ -18,6 +18,8 @@ import {
 import { notFound } from "next/navigation";
 import { ProductBackButton } from "@/components/dashboard/ProductBackButton";
 
+import { unstable_cache } from "next/cache";
+
 export const revalidate = 60;
 
 interface Props {
@@ -26,25 +28,38 @@ interface Props {
   };
 }
 
+const getCachedProductData = (sku: string) =>
+  unstable_cache(
+    async () => {
+      const [
+        { data: product },
+        { data: stockHistory }
+      ] = await Promise.all([
+        supabaseAdmin
+          .from("products")
+          .select("*")
+          .eq("sku_code", sku)
+          .maybeSingle(),
+        supabaseAdmin
+          .from("daily_stock")
+          .select("date, quantity")
+          .eq("sku_code", sku)
+          .order("date", { ascending: true })
+      ]);
+      return { product, stockHistory };
+    },
+    [`product-data-${sku}`],
+    {
+      tags: ["product-catalog", `product-${sku}`],
+      revalidate: 3600,
+    }
+  )();
+
 export default async function ProductDetailPage({ params }: Props) {
   const decodedSku = decodeURIComponent(params.sku);
 
-  // 1. Fetch product master info and daily stock history concurrently
-  const [
-    { data: product },
-    { data: stockHistory }
-  ] = await Promise.all([
-    supabaseAdmin
-      .from("products")
-      .select("*")
-      .eq("sku_code", decodedSku)
-      .single(),
-    supabaseAdmin
-      .from("daily_stock")
-      .select("date, quantity")
-      .eq("sku_code", decodedSku)
-      .order("date", { ascending: true })
-  ]);
+  // 1. Fetch product master info and daily stock history from tagged cache
+  const { product, stockHistory } = await getCachedProductData(decodedSku);
 
   if (!product) {
     notFound();

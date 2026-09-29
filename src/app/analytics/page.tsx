@@ -1,15 +1,19 @@
 import { Suspense } from "react";
 import { getWarehouseIntelligence } from "@/lib/analytics";
 import { AnalyticsClientDashboard } from "@/components/dashboard/AnalyticsClientDashboard";
+import { OverviewSkeleton } from "@/components/dashboard/OverviewSkeleton";
 
 export const revalidate = 60;
 
-export default async function AnalyticsPage() {
+async function AnalyticsDataStreamer() {
   const data = await getWarehouseIntelligence();
+  return <AnalyticsClientDashboard data={data} />;
+}
 
+export default function AnalyticsPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center text-xs text-slate-400">Loading Run-Rate & Velocity Analytics...</div>}>
-      <AnalyticsClientDashboard data={data} />
+    <Suspense fallback={<OverviewSkeleton />}>
+      <AnalyticsDataStreamer />
     </Suspense>
   );
 }
