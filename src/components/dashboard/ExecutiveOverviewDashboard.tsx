@@ -431,9 +431,6 @@ export function ExecutiveOverviewDashboard({ data }: Props) {
                 {stats.totalSKUs} SKUs Evaluated
               </span>
             </div>
-            <p className="text-xs text-slate-600">
-              Run-rate velocity burn speed and target coverage segmentation.
-            </p>
           </div>
 
           {/* Visual Health Distribution Segment Bar (Proportional to 6 alert categories) */}
