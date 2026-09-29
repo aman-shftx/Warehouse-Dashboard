@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/sync?secret=wh_sync_secret_2026_secure",
-      "schedule": "*/15 * * * *"
+      "schedule": "0 2 * * *"
     }
   ]
 }
