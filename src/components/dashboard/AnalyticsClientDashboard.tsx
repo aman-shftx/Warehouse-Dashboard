@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   TrendingUp,
   TrendingDown,
@@ -28,12 +29,60 @@ interface Props {
 
 export function AnalyticsClientDashboard({ data }: Props) {
   const { stats, items, sourcingBreakdown, categoryBreakdown } = data;
+  const searchParams = useSearchParams();
+  const urlTab = searchParams.get("tab") || searchParams.get("filter");
+
+  // Determine initial tab & card filter from URL
+  const initialTab =
+    urlTab === "dead_stock"
+      ? "dead_stock"
+      : urlTab === "excess"
+      ? "excess"
+      : urlTab === "sourcing_matrix"
+      ? "sourcing_matrix"
+      : "velocity";
+
+  const initialCardFilter =
+    urlTab === "dead_stock"
+      ? "dead_stock"
+      : urlTab === "excess"
+      ? "excess"
+      : urlTab === "top_drr"
+      ? "top_drr"
+      : urlTab === "top_trend"
+      ? "top_trend"
+      : urlTab === "worst_drr"
+      ? "worst_drr"
+      : urlTab === "worst_trend"
+      ? "worst_trend"
+      : "all";
 
   // Active navigation tab
-  const [activeTab, setActiveTab] = useState<"velocity" | "excess" | "dead_stock" | "sourcing_matrix">("velocity");
+  const [activeTab, setActiveTab] = useState<"velocity" | "excess" | "dead_stock" | "sourcing_matrix">(initialTab);
   
   // Card-level filter from upper interactive KPI cards
-  const [cardFilter, setCardFilter] = useState<"all" | "top_drr" | "top_trend" | "worst_drr" | "worst_trend" | "dead_stock" | "excess">("all");
+  const [cardFilter, setCardFilter] = useState<"all" | "top_drr" | "top_trend" | "worst_drr" | "worst_trend" | "dead_stock" | "excess">(initialCardFilter);
+
+  // Sync state if URL query params change
+  useEffect(() => {
+    if (!urlTab) return;
+    if (urlTab === "dead_stock") {
+      setActiveTab("dead_stock");
+      setCardFilter("dead_stock");
+    } else if (urlTab === "excess") {
+      setActiveTab("excess");
+      setCardFilter("excess");
+    } else if (urlTab === "sourcing_matrix") {
+      setActiveTab("sourcing_matrix");
+      setCardFilter("all");
+    } else if (urlTab === "top_drr" || urlTab === "top_trend" || urlTab === "worst_drr" || urlTab === "worst_trend") {
+      setActiveTab("velocity");
+      setCardFilter(urlTab as any);
+    } else if (urlTab === "velocity") {
+      setActiveTab("velocity");
+      setCardFilter("all");
+    }
+  }, [urlTab]);
   
   // Search query
   const [searchQuery, setSearchQuery] = useState("");

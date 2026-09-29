@@ -521,7 +521,7 @@ export function ExecutiveOverviewDashboard({ data }: Props) {
 
             {/* 4. Dead Stock */}
             <Link
-              href="/analytics"
+              href="/analytics?tab=dead_stock"
               className="p-3 rounded-lg bg-white border border-slate-200 hover:border-slate-300 transition-colors shadow-2xs group"
             >
               <div className="flex items-center justify-between">
@@ -731,7 +731,7 @@ export function ExecutiveOverviewDashboard({ data }: Props) {
               </div>
             </div>
             <Link
-              href="/analytics"
+              href="/analytics?tab=velocity&filter=top_drr"
               className="text-xs font-bold text-slate-900 hover:text-indigo-600 transition-colors"
             >
               All 50 →
