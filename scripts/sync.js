@@ -122,6 +122,15 @@ function parseSheetDate(rawDate) {
     let day = p1;
     let month = p2;
     if (p2 > 12 && p1 <= 12) { day = p2; month = p1; }
+    const now = new Date();
+    const candidateDate = new Date(year, month - 1, day);
+    if (candidateDate > now && p1 <= 12 && p2 <= 12) {
+      const swappedDate = new Date(year, p1 - 1, p2);
+      if (swappedDate <= now) {
+        month = p1;
+        day = p2;
+      }
+    }
     return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
   }
   return null;

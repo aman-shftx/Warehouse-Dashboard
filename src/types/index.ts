@@ -55,24 +55,122 @@ export interface SyncMetadata {
   updated_at: string;
 }
 
-export interface DRRItem {
+export type StockRiskStatus =
+  | 'OUT_OF_STOCK'
+  | 'CRITICAL'
+  | 'LOW_COVER'
+  | 'HEALTHY'
+  | 'EXCESS'
+  | 'DEAD_STOCK';
+
+export type DemandTrend = 'ACCELERATING' | 'STABLE' | 'DECLINING';
+
+export type ABCTier = 'A' | 'B' | 'C';
+
+export type SourcingActionPriority = 'CRITICAL' | 'ATTENTION' | 'NORMAL' | 'EXCESS';
+
+export interface EnrichedSKUItem {
   sku_code: string;
-  product_name: string | null;
-  brand: string | null;
-  category: string | null;
-  sourcing: string | null;
-  required_qty: number;
+  old_sku_code?: string | null;
+  name: string;
+  category: string;
+  brand: string;
+  sourcing: string;
   current_stock: number;
-  drr_7d: number;
+  required_qty: number;
+  deficit: number;
+  is_reorder: boolean;
   outward_7d: number;
+  drr_7d: number;
+  outward_14d: number;
+  drr_14d: number;
+  outward_30d: number;
+  drr_30d: number;
+  days_of_stock: number;
+  projected_stockout_days: number;
+  accel_pct: number;
+  demand_trend: DemandTrend;
+  risk_status: StockRiskStatus;
+  abc_tier: ABCTier;
+  action_priority: SourcingActionPriority;
+  suggested_action: string;
+  last_outward_date?: string | null;
+  trend?: number[];
 }
 
-export interface InventoryStats {
+export interface SourcingBreakdownItem {
+  sourcing: string;
+  skuCount: number;
+  totalStock: number;
+  outward7d: number;
+  outward14d?: number;
+  avgDrr: number;
+  avgDrr14d?: number;
+  oosCount: number;
+  reorderCount: number;
+}
+
+export interface CategoryBreakdownItem {
+  category: string;
+  skuCount: number;
+  totalStock: number;
+  outward7d: number;
+  outward14d?: number;
+  avgDrr: number;
+  avgDrr14d?: number;
+  oosCount: number;
+  reorderCount: number;
+}
+
+export interface ExecutiveSummaryStats {
   totalSKUs: number;
-  totalCurrentStock: number;
-  outOfStockCount: number;
+  totalWarehouseStock: number;
+  oosCount: number;
+  criticalCount: number;
   lowStockCount: number;
-  excessStockCount: number;
-  categoriesCount: number;
+  healthyCount: number;
+  excessCount: number;
+  deadStockCount: number;
+  reorderCount: number;
+  totalDeficitUnits: number;
+  avgDaysOfStock: number;
+  latestStockDate: string | null;
+  latestOutwardDate: string | null;
+  outwardYesterdaySkus: number;
+  outwardYesterdayQty: number;
+  inwardYesterdaySkus: number;
+  inwardYesterdayQty: number;
+  netMovementYesterday: number;
   lastSyncedAt: string | null;
 }
+
+export interface MacroStockPoint {
+  date: string;
+  quantity: number;
+}
+
+export interface ExecutiveOverviewData {
+  stats: ExecutiveSummaryStats;
+  items: EnrichedSKUItem[];
+  sourcingBreakdown: SourcingBreakdownItem[];
+  categoryBreakdown: CategoryBreakdownItem[];
+  macroTrend: MacroStockPoint[];
+  sourcingActionQueue: EnrichedSKUItem[];
+  alertsState?: AlertsState;
+}
+
+export interface POIssuedRecord {
+  sku_code: string;
+  po_no: string;
+  po_date: string;
+  qty_ordered: number;
+  expected_inward: string;
+  notes?: string;
+  created_at: string;
+}
+
+export interface AlertsState {
+  ignored: string[];
+  poIssued: Record<string, POIssuedRecord>;
+}
+

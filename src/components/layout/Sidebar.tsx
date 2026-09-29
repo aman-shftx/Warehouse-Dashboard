@@ -5,16 +5,19 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { 
   LayoutDashboard, 
+  ArrowLeftRight,
   Boxes, 
   TrendingUp, 
   AlertTriangle,
-  PanelLeftClose
+  PanelLeftClose,
+  PanelLeftOpen
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "./SidebarContext";
 
 const navigation = [
   { name: "Overview", href: "/", icon: LayoutDashboard },
+  { name: "Inventory Movement", href: "/movement", icon: ArrowLeftRight },
   { name: "Inventory", href: "/inventory", icon: Boxes },
   { name: "Analytics & DRR", href: "/analytics", icon: TrendingUp },
   { name: "Alerts & Reorder", href: "/alerts", icon: AlertTriangle },
@@ -23,26 +26,10 @@ const navigation = [
 export function Sidebar() {
   const pathname = usePathname();
   const { isCollapsed, toggleSidebar } = useSidebar();
-  const [isHovered, setIsHovered] = useState(false);
-
-  const handleMouseEnter = () => {
-    if (isCollapsed) {
-      setIsHovered(true);
-    }
-  };
-
-  const handleMouseLeave = () => {
-    if (isCollapsed) {
-      setIsHovered(false);
-    }
-  };
-
-  const isExpanded = !isCollapsed || isHovered;
+  const isExpanded = !isCollapsed;
 
   return (
     <aside
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
       className={cn(
         "bg-white text-slate-700 h-screen sticky top-0 flex flex-col border-r border-slate-200/90 shrink-0 select-none overflow-hidden transition-[width] duration-200 ease-in-out z-20",
         isExpanded ? "w-64" : "w-16"
@@ -59,14 +46,14 @@ export function Sidebar() {
           <button
             onClick={toggleSidebar}
             title="Expand sidebar ([)"
-            className="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white shadow-sm hover:bg-indigo-700 transition-colors"
+            className="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white shadow-xs hover:bg-indigo-700 transition-colors"
           >
             <Boxes className="w-5 h-5 text-white" />
           </button>
         ) : (
           <>
             <div className="flex items-center gap-3 overflow-hidden">
-              <div className="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white shadow-sm shrink-0">
+              <div className="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white shadow-xs shrink-0">
                 <Boxes className="w-5 h-5 text-white" />
               </div>
               <div className="overflow-hidden">
@@ -89,7 +76,7 @@ export function Sidebar() {
       {/* Nav Links */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto overflow-x-hidden">
         {isExpanded && (
-          <div className="px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+          <div className="px-3 pb-2 text-xs font-bold uppercase tracking-wider text-slate-600">
             Workspaces
           </div>
         )}
@@ -101,26 +88,21 @@ export function Sidebar() {
               key={item.name}
               href={item.href}
               title={!isExpanded ? item.name : undefined}
-              onClick={() => {
-                if (isCollapsed) {
-                  setIsHovered(false);
-                }
-              }}
               className={cn(
-                "group flex items-center rounded-lg text-sm font-medium transition-colors duration-100",
+                "group flex items-center rounded-lg text-[13px] font-semibold transition-colors duration-100",
                 !isExpanded
                   ? "justify-center p-3 relative"
                   : "justify-between px-3 py-2.5",
                 isActive
-                  ? "bg-indigo-50/90 text-indigo-700 font-semibold border border-indigo-200/80 shadow-xs"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 border border-transparent"
+                  ? "bg-indigo-50 text-indigo-700 font-bold border border-indigo-200/90 shadow-2xs"
+                  : "text-slate-700 hover:text-slate-950 hover:bg-slate-100 border border-transparent"
               )}
             >
               <div className="flex items-center gap-3">
                 <Icon
                   className={cn(
-                    "w-5 h-5 shrink-0 transition-colors",
-                    isActive ? "text-indigo-600" : "text-slate-400 group-hover:text-slate-600"
+                    "w-4 h-4 shrink-0 transition-colors",
+                    isActive ? "text-indigo-600" : "text-slate-500 group-hover:text-slate-800"
                   )}
                 />
                 {isExpanded && <span className="truncate">{item.name}</span>}
@@ -154,9 +136,9 @@ export function Sidebar() {
           <>
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-xs font-semibold text-slate-700">Live Mirror</span>
+              <span className="text-xs font-bold text-slate-800">Live Mirror</span>
             </div>
-            <span className="text-[11px] font-mono text-slate-400">15m cron</span>
+            <span className="text-[11px] font-mono font-medium text-slate-600">15m cron</span>
           </>
         )}
       </div>

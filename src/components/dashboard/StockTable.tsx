@@ -10,7 +10,7 @@ import {
   SlidersHorizontal,
   RotateCcw
 } from "lucide-react";
-import { formatNumber } from "@/lib/utils";
+import { formatNumber, cn } from "@/lib/utils";
 import { useSearch } from "@/components/layout/SearchContext";
 import { MultiSelectFilter } from "./MultiSelectFilter";
 
@@ -24,6 +24,8 @@ export interface TableItem {
   current_stock: number;
   required_qty: number;
   drr_7d?: number;
+  drr_14d?: number;
+  days_of_stock?: number;
   latest_date?: string;
 }
 
@@ -275,6 +277,15 @@ export function StockTable({ items, categories, sourcings }: Props) {
               <th className="py-2.5 px-3">Category</th>
               <th className="py-2.5 px-3">Sourcing</th>
               <th
+                onClick={() => toggleSort("drr_14d")}
+                className="py-2.5 px-3 text-right cursor-pointer hover:bg-slate-100 transition-colors"
+              >
+                <div className="flex items-center justify-end gap-1">
+                  <span>DRR (14D)</span>
+                  <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                </div>
+              </th>
+              <th
                 onClick={() => toggleSort("current_stock")}
                 className="py-2.5 px-3 text-right cursor-pointer hover:bg-slate-100 transition-colors"
               >
@@ -292,6 +303,15 @@ export function StockTable({ items, categories, sourcings }: Props) {
                   <ArrowUpDown className="w-3 h-3 text-slate-400" />
                 </div>
               </th>
+              <th
+                onClick={() => toggleSort("days_of_stock")}
+                className="py-2.5 px-3 text-right cursor-pointer hover:bg-slate-100 transition-colors"
+              >
+                <div className="flex items-center justify-end gap-1">
+                  <span>Cover</span>
+                  <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                </div>
+              </th>
               <th className="py-2.5 px-3 text-center">Status</th>
               <th className="py-2.5 px-3 text-right">View</th>
             </tr>
@@ -299,7 +319,7 @@ export function StockTable({ items, categories, sourcings }: Props) {
           <tbody className="divide-y divide-slate-100 text-[13px] leading-5 text-slate-700">
             {paginatedItems.length === 0 ? (
               <tr>
-                <td colSpan={8} className="py-12 text-center text-xs text-slate-400">
+                <td colSpan={10} className="py-12 text-center text-xs text-slate-400">
                   <div className="space-y-1">
                     <p>No products match the selected filters or search.</p>
                     {hasActiveFilters && (
@@ -345,6 +365,9 @@ export function StockTable({ items, categories, sourcings }: Props) {
                     <td className="py-1.5 px-3 whitespace-nowrap">
                       {getSourcingBadge(item.sourcing)}
                     </td>
+                    <td className="py-1.5 px-3 text-right font-mono tabular-nums font-semibold text-indigo-700 text-xs whitespace-nowrap">
+                      {item.drr_14d !== undefined ? item.drr_14d : (item.drr_7d !== undefined ? item.drr_7d : "—")}
+                    </td>
                     <td className="py-1.5 px-3 text-right font-mono tabular-nums font-semibold text-slate-900 text-xs whitespace-nowrap">
                       {isOutOfStock ? (
                         <span className="text-rose-600 font-bold">0</span>
@@ -354,6 +377,30 @@ export function StockTable({ items, categories, sourcings }: Props) {
                     </td>
                     <td className="py-1.5 px-3 text-right font-mono tabular-nums text-xs text-slate-500 whitespace-nowrap">
                       {item.required_qty ? formatNumber(item.required_qty) : "-"}
+                    </td>
+                    <td className="py-1.5 px-3 text-right font-mono tabular-nums text-xs whitespace-nowrap">
+                      {isOutOfStock ? (
+                        <span className="text-rose-600 font-bold">0d</span>
+                      ) : item.days_of_stock !== undefined ? (
+                        item.days_of_stock >= 999 ? (
+                          <span className="text-slate-400">∞</span>
+                        ) : (
+                          <span
+                            className={cn(
+                              "px-1 py-0.5 rounded text-[10px] font-semibold",
+                              item.days_of_stock < 7
+                                ? "bg-rose-50 text-rose-700 border border-rose-200/60"
+                                : item.days_of_stock < 15
+                                ? "bg-amber-50 text-amber-700 border border-amber-200/60"
+                                : "text-slate-700"
+                            )}
+                          >
+                            {Math.round(item.days_of_stock)}d
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
                     </td>
                     <td className="py-1.5 px-3 text-center whitespace-nowrap">
                       {isOutOfStock ? (

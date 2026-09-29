@@ -86,7 +86,7 @@ export async function getInventoryMovement(days: number = 1): Promise<MovementDa
   const latestMap = new Map<string, number>();
   (stockLatest || []).forEach((r) => latestMap.set(r.sku_code, r.quantity || 0));
 
-  const allSkus = new Set([...prevMap.keys(), ...latestMap.keys()]);
+  const allSkus = new Set([...Array.from(prevMap.keys()), ...Array.from(latestMap.keys())]);
 
   // 5. Fetch daily trend for moving SKUs (last 14 days by default)
   const movingSkus = Array.from(allSkus).filter((sku) => {

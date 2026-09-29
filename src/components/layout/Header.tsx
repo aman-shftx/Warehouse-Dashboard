@@ -14,6 +14,7 @@ export function Header() {
 
   function getPageName(path: string) {
     if (path === "/") return "Overview";
+    if (path.startsWith("/movement")) return "Inventory Movement";
     if (path.startsWith("/inventory")) return "Inventory";
     if (path.startsWith("/analytics")) return "Analytics & DRR";
     if (path.startsWith("/alerts")) return "Alerts & Reorder";

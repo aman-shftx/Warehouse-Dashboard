@@ -34,6 +34,17 @@ export function parseSheetDate(rawDate: string): string | null {
       month = p1;
     }
 
+    // Guard against future dates caused by MM/DD/YYYY inversion (e.g. 04/10/2026 entered for April 10)
+    const now = new Date();
+    const candidateDate = new Date(year, month - 1, day);
+    if (candidateDate > now && p1 <= 12 && p2 <= 12) {
+      const swappedDate = new Date(year, p1 - 1, p2);
+      if (swappedDate <= now) {
+        month = p1;
+        day = p2;
+      }
+    }
+
     const mm = String(month).padStart(2, "0");
     const dd = String(day).padStart(2, "0");
     return `${year}-${mm}-${dd}`;
