@@ -4,20 +4,58 @@ import { useState, useMemo } from "react";
 import { 
   Search, 
   X, 
-  Pencil, 
+  Calendar,
   ChevronLeft, 
   ChevronRight, 
-  ChevronDown,
-  ChevronUp,
+  ChevronDown, 
+  ChevronUp, 
   Download, 
   ArrowUpDown, 
   RotateCcw, 
   Check, 
-  AlertCircle
+  AlertCircle 
 } from "lucide-react";
 import { formatNumber, formatDate, cn } from "@/lib/utils";
-import { MovementItem, MovementSectionData } from "@/lib/movement";
+import { MovementItem, MovementSectionData, MovementDataResponse } from "@/lib/movement";
 import { MovementSparkline } from "./MovementSparkline";
+
+function getYesterdayIST(): string {
+  const formatter = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" });
+  const todayIST = formatter.format(new Date());
+  const d = new Date(todayIST + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() - 1);
+  return formatter.format(d);
+}
+
+function getTodayIST(): string {
+  const formatter = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" });
+  return formatter.format(new Date());
+}
+
+function stepDate(dateStr: string, deltaDays: number): string {
+  const d = new Date(dateStr + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() + deltaDays);
+  const formatter = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" });
+  return formatter.format(d);
+}
+
+function formatDisplayDateRange(start: string, end: string): string {
+  if (!start) return "";
+  if (start === end || !end) return formatDate(start);
+  const startFmt = formatDate(start);
+  const endFmt = formatDate(end);
+  const sParts = startFmt.split(" ");
+  const eParts = endFmt.split(" ");
+  if (sParts.length === 3 && eParts.length === 3) {
+    if (sParts[2] === eParts[2] && sParts[1] === eParts[1]) {
+      return `${sParts[0]}–${eParts[0]} ${sParts[1]} ${sParts[2]}`;
+    }
+    if (sParts[2] === eParts[2]) {
+      return `${sParts[0]} ${sParts[1]} – ${eParts[0]} ${eParts[1]} ${sParts[2]}`;
+    }
+  }
+  return `${startFmt} → ${endFmt}`;
+}
 
 interface Props {
   type: "outward" | "inward";
@@ -25,6 +63,7 @@ interface Props {
   initialDays: number;
   latestDate: string | null;
   prevDate: string | null;
+  highlighted?: boolean;
 }
 
 export function MovementTrackerCard({
@@ -33,14 +72,23 @@ export function MovementTrackerCard({
   initialDays,
   latestDate: serverLatestDate,
   prevDate: serverPrevDate,
+  highlighted = false,
 }: Props) {
   const isOutward = type === "outward";
 
-  // State
+  // Unified Date selection state (Single Date if start === end, Range if start !== end)
+  const defaultDate = serverLatestDate || getYesterdayIST();
+  const [selectedStartDate, setSelectedStartDate] = useState<string>(serverPrevDate || defaultDate);
+  const [selectedEndDate, setSelectedEndDate] = useState<string>(serverLatestDate || defaultDate);
   const [days, setDays] = useState<number>(initialDays);
-  const [isCustomDays, setIsCustomDays] = useState<boolean>(false);
-  const [customInputValue, setCustomInputValue] = useState<string>("14");
-  const [showCustomModal, setShowCustomModal] = useState<boolean>(false);
+
+  const isRange = selectedStartDate !== selectedEndDate;
+  const isDateChanged = selectedStartDate !== defaultDate || selectedEndDate !== defaultDate;
+
+  // Popover form states
+  const [showPickerModal, setShowPickerModal] = useState<boolean>(false);
+  const [tempStart, setTempStart] = useState<string>(serverPrevDate || defaultDate);
+  const [tempEnd, setTempEnd] = useState<string>(serverLatestDate || defaultDate);
 
   const [data, setData] = useState<MovementSectionData>(initialData);
   const [latestDate, setLatestDate] = useState<string | null>(serverLatestDate);
@@ -53,21 +101,26 @@ export function MovementTrackerCard({
   const [sortKey, setSortKey] = useState<"change_qty" | "current_stock" | "name" | "sku" | "brand" | "category">("change_qty");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [isExpandedTo10, setIsExpandedTo10] = useState<boolean>(false);
-  const pageSize = isExpandedTo10 ? 10 : 5;
+  const [isExpandedTo14, setIsExpandedTo14] = useState<boolean>(false);
+  const pageSize = isExpandedTo14 ? 14 : 7;
 
-  // Fetch updated data when days change
-  async function fetchDaysData(targetDays: number, customFlag: boolean = false) {
+  // Fetch updated data from API
+  async function fetchMovement(params: { date?: string; startDate?: string; endDate?: string }) {
     setLoading(true);
     try {
-      const res = await fetch(`/api/inventory-movement?days=${targetDays}`);
+      let query = "";
+      if (params.date) {
+        query = `date=${params.date}`;
+      } else if (params.startDate && params.endDate) {
+        query = `startDate=${params.startDate}&endDate=${params.endDate}`;
+      }
+      const res = await fetch(`/api/inventory-movement?${query}`);
       if (!res.ok) throw new Error("Failed to fetch movement data");
-      const json = await res.json();
+      const json: MovementDataResponse = await res.json();
 
-      setDays(targetDays);
-      setIsCustomDays(customFlag);
       setLatestDate(json.latestDate);
       setPrevDate(json.prevDate);
+      setDays(json.days);
       setData(isOutward ? json.outward : json.inward);
       setCurrentPage(1);
     } catch (err: any) {
@@ -77,17 +130,57 @@ export function MovementTrackerCard({
     }
   }
 
-  const handleSelectDays = (d: number) => {
-    setShowCustomModal(false);
-    if (d === days && !isCustomDays) return;
-    fetchDaysData(d, false);
+  const handleApply = (start: string, end: string) => {
+    if (!start) return;
+    const finalEnd = end || start;
+    const [finalStart, cleanEnd] = start <= finalEnd ? [start, finalEnd] : [finalEnd, start];
+
+    setSelectedStartDate(finalStart);
+    setSelectedEndDate(cleanEnd);
+    setTempStart(finalStart);
+    setTempEnd(cleanEnd);
+    setShowPickerModal(false);
+
+    if (finalStart === cleanEnd) {
+      fetchMovement({ date: finalStart });
+    } else {
+      fetchMovement({ startDate: finalStart, endDate: cleanEnd });
+    }
   };
 
-  const handleApplyCustomDays = () => {
-    const parsed = parseInt(customInputValue, 10);
-    if (!parsed || parsed < 1) return;
-    setShowCustomModal(false);
-    fetchDaysData(parsed, true);
+  const handleResetToDefault = () => {
+    setSelectedStartDate(defaultDate);
+    setSelectedEndDate(defaultDate);
+    setTempStart(defaultDate);
+    setTempEnd(defaultDate);
+    setShowPickerModal(false);
+    fetchMovement({ date: defaultDate });
+  };
+
+  const handlePrevDay = () => {
+    if (!isRange) {
+      const prev = stepDate(selectedStartDate, -1);
+      handleApply(prev, prev);
+    } else {
+      const newStart = stepDate(selectedStartDate, -1);
+      const newEnd = stepDate(selectedEndDate, -1);
+      handleApply(newStart, newEnd);
+    }
+  };
+
+  const handleNextDay = () => {
+    if (!isRange) {
+      const next = stepDate(selectedStartDate, 1);
+      if (next <= getTodayIST()) {
+        handleApply(next, next);
+      }
+    } else {
+      const newEnd = stepDate(selectedEndDate, 1);
+      if (newEnd <= getTodayIST()) {
+        const newStart = stepDate(selectedStartDate, 1);
+        handleApply(newStart, newEnd);
+      }
+    }
   };
 
   // Distinct categories from data
@@ -152,6 +245,10 @@ export function MovementTrackerCard({
 
   // Export CSV
   const handleExportCSV = () => {
+    const periodLabel = isRange
+      ? `${selectedStartDate} to ${selectedEndDate}`
+      : `${selectedStartDate}`;
+
     const headers = [
       "Category",
       "Brand",
@@ -171,7 +268,7 @@ export function MovementTrackerCard({
       item.change_qty,
       item.current_stock,
       item.prev_stock,
-      `"${prevDate} to ${latestDate}"`,
+      `"${periodLabel}"`,
     ]);
 
     const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
@@ -180,7 +277,7 @@ export function MovementTrackerCard({
     link.setAttribute("href", encodedUri);
     link.setAttribute(
       "download",
-      `${type}-materials-${latestDate || "report"}-${days}d.csv`
+      `${type}-materials-${isRange ? `${selectedStartDate}_to_${selectedEndDate}` : selectedStartDate}.csv`
     );
     document.body.appendChild(link);
     link.click();
@@ -195,28 +292,356 @@ export function MovementTrackerCard({
   };
 
   return (
-    <div className="bg-white rounded-lg border border-slate-200/90 shadow-[0_1px_3px_rgba(0,0,0,0.02)] overflow-hidden flex flex-col h-full">
-      {/* 1. Master Card Header with Title on Left, Centered Large Metrics, and Controls on Right */}
-      <div className="p-3 border-b border-slate-100 bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Left: Heading with Date below it (monochrome shades of black) */}
-          <div className="min-w-0">
+    <div
+      className={cn(
+        "bg-white rounded-lg border shadow-[0_1px_3px_rgba(0,0,0,0.02)] flex flex-col h-full relative transition-all",
+        highlighted
+          ? isOutward
+            ? "border-indigo-500 ring-2 ring-indigo-500"
+            : "border-emerald-500 ring-2 ring-emerald-500"
+          : "border-slate-200/90"
+      )}
+    >
+      {/* 1. Master Card Header: Standardized 2-Tier Layout for Inward & Outward */}
+      <div className="p-3 border-b border-slate-100 bg-white space-y-2.5 rounded-t-lg">
+        {/* Tier 1: Title & Flow Tag (Left) + Date Navigation & CSV Export (Right) */}
+        <div className="flex items-center justify-between gap-2">
+          {/* Left: Heading with Flow Tag */}
+          <div className="flex items-center gap-2 min-w-0">
             <h2 className="text-sm font-bold text-slate-900 tracking-tight whitespace-nowrap">
               {isOutward ? "Material Outward" : "Material Inward"}
             </h2>
-            <p className="text-[11px] text-slate-500 font-mono mt-0.5 flex items-center gap-1.5 whitespace-nowrap">
-              <span>{formatDate(prevDate)} → {formatDate(latestDate)}</span>
-              <span className="font-sans font-medium text-[9px] px-1.5 py-0.5 rounded border bg-slate-100 text-slate-600 border-slate-200/80">
-                T-1 Delay
-              </span>
-            </p>
+            <span
+              className={cn(
+                "text-[10px] font-semibold px-1.5 py-0.5 rounded border uppercase tracking-wider",
+                isOutward
+                  ? "bg-slate-100 text-slate-700 border-slate-200"
+                  : "bg-emerald-50 text-emerald-700 border-emerald-200/80"
+              )}
+            >
+              {isOutward ? "Outward" : "Inward"}
+            </span>
           </div>
 
-          {/* Center: Number of SKUs and Total Quantities (Bigger Numbers, monochrome shades of black) */}
-          <div className="flex items-center gap-2 shrink-0 justify-center">
+          {/* Right: Date Controls & CSV Export */}
+          <div className="flex items-center gap-1.5 shrink-0 relative">
+            {/* Reset button if date is changed */}
+            {isDateChanged && (
+              <button
+                type="button"
+                onClick={handleResetToDefault}
+                disabled={loading}
+                title={`Reset to default (${formatDate(defaultDate)})`}
+                className="h-6 px-2 text-[10px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/80 rounded flex items-center gap-1 transition-all"
+              >
+                <RotateCcw className="w-2.5 h-2.5" />
+                <span>Reset</span>
+              </button>
+            )}
+
+            {/* Active Date Trigger Button */}
+            <div className="inline-flex items-center rounded-md border border-slate-200 bg-white p-0.5 shadow-2xs">
+              <button
+                type="button"
+                onClick={handlePrevDay}
+                disabled={loading}
+                title="Previous day"
+                className="h-6 w-6 rounded hover:bg-slate-100 flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors disabled:opacity-40"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowPickerModal(!showPickerModal)}
+                title="Click to select single date or date range"
+                disabled={loading}
+                className={cn(
+                  "h-6 px-2 text-[11px] font-mono font-semibold rounded flex items-center gap-1.5 transition-colors",
+                  showPickerModal ? "bg-slate-100 text-slate-900" : "text-slate-800 hover:bg-slate-50"
+                )}
+              >
+                <Calendar className="w-3 h-3 text-slate-500 shrink-0" />
+                <span className="whitespace-nowrap">
+                  {formatDisplayDateRange(selectedStartDate, selectedEndDate)}
+                </span>
+                <ChevronDown className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleNextDay}
+                disabled={loading || (isRange ? selectedEndDate >= getTodayIST() : selectedStartDate >= getTodayIST())}
+                title="Next day"
+                className="h-6 w-6 rounded hover:bg-slate-100 flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Export CSV button */}
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              title="Export CSV"
+              className="h-7 w-7 rounded-md border border-slate-200 bg-white text-slate-500 hover:text-slate-800 hover:bg-slate-50 flex items-center justify-center shadow-2xs transition-colors shrink-0"
+            >
+              <Download className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Unified Date & Range Selector Popover */}
+            {showPickerModal && (
+              <>
+                <div
+                  className="fixed inset-0 z-40 bg-slate-900/10 backdrop-blur-[0.5px]"
+                  onClick={() => setShowPickerModal(false)}
+                />
+                <div className="absolute right-0 top-full mt-2 z-50 w-[305px] sm:w-[325px] max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xl animate-in fade-in zoom-in-95 duration-100">
+                  <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
+                    <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-slate-600" />
+                      Select Date or Range
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {isDateChanged && (
+                        <button
+                          type="button"
+                          onClick={handleResetToDefault}
+                          className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200/60"
+                        >
+                          <RotateCcw className="w-2.5 h-2.5" />
+                          Reset
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setShowPickerModal(false)}
+                        className="text-slate-400 hover:text-slate-600 p-0.5 rounded"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Clear Guidance / Hint Banner */}
+                  <div className="mb-2.5 p-2 rounded-md bg-amber-50/80 border border-amber-200/60 text-[11px] text-amber-900 flex items-start gap-1.5 leading-snug">
+                    <span className="shrink-0 text-xs">💡</span>
+                    <span>
+                      <strong>Hint:</strong> Pick a single date for a <strong>fixed day</strong>, or choose both <strong>From</strong> & <strong>To</strong> dates to view a <strong>date range</strong>.
+                    </span>
+                  </div>
+
+                  {/* Date Inputs */}
+                  <div className="space-y-2.5 mb-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 block mb-1">
+                          From Date
+                        </label>
+                        <input
+                          type="date"
+                          value={tempStart}
+                          max={getTodayIST()}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setTempStart(val);
+                            if (tempEnd && val && tempEnd < val) {
+                              setTempEnd(val);
+                            }
+                          }}
+                          className="w-full h-8 px-2 text-[11px] font-mono font-medium border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 bg-white"
+                        />
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                            To Date
+                          </label>
+                          {tempStart !== tempEnd && (
+                            <button
+                              type="button"
+                              onClick={() => setTempEnd(tempStart)}
+                              className="text-[10px] text-indigo-600 hover:underline font-medium"
+                            >
+                              Single Day
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="date"
+                          value={tempEnd}
+                          min={tempStart}
+                          max={getTodayIST()}
+                          onChange={(e) => setTempEnd(e.target.value)}
+                          className="w-full h-8 px-2 text-[11px] font-mono font-medium border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900 bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Quick Presets */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                          Quick Presets
+                        </span>
+                        {isDateChanged && (
+                          <button
+                            type="button"
+                            onClick={handleResetToDefault}
+                            className="text-[10px] text-indigo-600 hover:underline font-medium"
+                          >
+                            Default (Yesterday)
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-3 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const y = getYesterdayIST();
+                            setTempStart(y);
+                            setTempEnd(y);
+                            handleApply(y, y);
+                          }}
+                          className={cn(
+                            "py-1 text-[10px] rounded border font-semibold transition-colors",
+                            tempStart === getYesterdayIST() && tempEnd === getYesterdayIST()
+                              ? "bg-slate-900 text-white border-slate-900"
+                              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                          )}
+                        >
+                          Yesterday (T-1)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const db = stepDate(getYesterdayIST(), -1);
+                            setTempStart(db);
+                            setTempEnd(db);
+                            handleApply(db, db);
+                          }}
+                          className={cn(
+                            "py-1 text-[10px] rounded border font-semibold transition-colors",
+                            tempStart === stepDate(getYesterdayIST(), -1) && tempEnd === stepDate(getYesterdayIST(), -1)
+                              ? "bg-slate-900 text-white border-slate-900"
+                              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                          )}
+                        >
+                          Day Before
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const end = getYesterdayIST();
+                            const start = stepDate(end, -2);
+                            setTempStart(start);
+                            setTempEnd(end);
+                            handleApply(start, end);
+                          }}
+                          className={cn(
+                            "py-1 text-[10px] rounded border font-semibold transition-colors",
+                            tempStart === stepDate(getYesterdayIST(), -2) && tempEnd === getYesterdayIST()
+                              ? "bg-slate-900 text-white border-slate-900"
+                              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                          )}
+                        >
+                          Last 3 Days
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const end = getYesterdayIST();
+                            const start = stepDate(end, -6);
+                            setTempStart(start);
+                            setTempEnd(end);
+                            handleApply(start, end);
+                          }}
+                          className={cn(
+                            "py-1 text-[10px] rounded border font-semibold transition-colors",
+                            tempStart === stepDate(getYesterdayIST(), -6) && tempEnd === getYesterdayIST()
+                              ? "bg-slate-900 text-white border-slate-900"
+                              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                          )}
+                        >
+                          Last 7 Days
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const end = getYesterdayIST();
+                            const start = stepDate(end, -13);
+                            setTempStart(start);
+                            setTempEnd(end);
+                            handleApply(start, end);
+                          }}
+                          className={cn(
+                            "py-1 text-[10px] rounded border font-semibold transition-colors",
+                            tempStart === stepDate(getYesterdayIST(), -13) && tempEnd === getYesterdayIST()
+                              ? "bg-slate-900 text-white border-slate-900"
+                              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                          )}
+                        >
+                          Last 14 Days
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const end = getYesterdayIST();
+                            const start = stepDate(end, -29);
+                            setTempStart(start);
+                            setTempEnd(end);
+                            handleApply(start, end);
+                          }}
+                          className={cn(
+                            "py-1 text-[10px] rounded border font-semibold transition-colors",
+                            tempStart === stepDate(getYesterdayIST(), -29) && tempEnd === getYesterdayIST()
+                              ? "bg-slate-900 text-white border-slate-900"
+                              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                          )}
+                        >
+                          Last 30 Days
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Dynamic Apply Action Button */}
+                  <button
+                    type="button"
+                    onClick={() => handleApply(tempStart, tempEnd)}
+                    disabled={loading || !tempStart}
+                    className="w-full h-8 text-xs font-semibold text-white bg-slate-900 hover:bg-black rounded-md transition-colors flex items-center justify-center gap-1.5 shadow-2xs disabled:opacity-50"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    {tempStart === tempEnd || !tempEnd
+                      ? `Apply: ${formatDate(tempStart)} (Single Day)`
+                      : `Apply Range (${formatDate(tempStart)} → ${formatDate(tempEnd)})`}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Tier 2: Date Context Subtitle (Left) + Standardized SKUs & Units Metrics (Right) */}
+        <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100">
+          {/* Left: Detailed Date Span & Badge */}
+          <div className="text-[11px] text-slate-500 font-mono flex items-center gap-1.5 min-w-0">
+            <span className="truncate">
+              {isRange
+                ? `${formatDate(selectedStartDate)} → ${formatDate(selectedEndDate)}`
+                : formatDate(selectedStartDate)}
+            </span>
+            <span className="font-sans font-medium text-[9px] px-1.5 py-0.5 rounded border bg-slate-100 text-slate-600 border-slate-200/80 shrink-0">
+              {isRange ? `${days}d Range` : "Fixed Day"}
+            </span>
+          </div>
+
+          {/* Right: Uniform Stat Badges */}
+          <div className="flex items-center gap-2 shrink-0">
             {/* Total SKUs */}
-            <div className="flex items-baseline gap-1.5 px-3 py-1 rounded-md bg-slate-50 border border-slate-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-              <span className="text-base sm:text-lg font-bold font-mono text-slate-900 leading-none">
+            <div className="flex items-baseline gap-1 px-2.5 py-1 rounded-md bg-slate-50 border border-slate-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.02)] min-w-[70px] justify-center">
+              <span className="text-sm sm:text-base font-bold font-mono text-slate-900 leading-none">
                 {formatNumber(data.totalSkus)}
               </span>
               <span className="text-[10px] font-semibold text-slate-500 font-sans uppercase tracking-wider">
@@ -225,107 +650,14 @@ export function MovementTrackerCard({
             </div>
 
             {/* Total Units */}
-            <div className="flex items-baseline gap-1.5 px-3 py-1 rounded-md bg-slate-50 border border-slate-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-              <span className="text-base sm:text-lg font-bold font-mono text-slate-900 leading-none">
+            <div className="flex items-baseline gap-1 px-2.5 py-1 rounded-md bg-slate-50 border border-slate-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.02)] min-w-[75px] justify-center">
+              <span className="text-sm sm:text-base font-bold font-mono text-slate-900 leading-none">
                 {formatNumber(data.totalQty)}
               </span>
               <span className="text-[10px] font-semibold text-slate-500 font-sans uppercase tracking-wider">
                 Units
               </span>
             </div>
-          </div>
-
-          {/* Right: Days Selector & Export CSV (shades of black) */}
-          <div className="flex items-center gap-1 shrink-0 justify-end">
-            <div className="relative inline-flex items-center rounded-md border border-slate-200 bg-slate-50/80 p-0.5 text-xs font-medium">
-              {[1, 3, 7].map((d) => (
-                <button
-                  key={d}
-                  onClick={() => handleSelectDays(d)}
-                  disabled={loading}
-                  className={cn(
-                    "h-6 min-w-[26px] px-2 rounded transition-all text-[11px] font-semibold flex items-center justify-center",
-                    days === d && !isCustomDays
-                      ? "bg-slate-900 text-white shadow-xs"
-                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/70"
-                  )}
-                >
-                  {d}d
-                </button>
-              ))}
-
-              {/* Pencil icon for custom days */}
-              <button
-                onClick={() => setShowCustomModal(!showCustomModal)}
-                title="Choose custom days"
-                disabled={loading}
-                className={cn(
-                  "h-6 px-1.5 rounded transition-all text-[11px] font-semibold flex items-center justify-center gap-0.5",
-                  isCustomDays
-                    ? "bg-slate-900 text-white shadow-xs"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/70"
-                )}
-              >
-                {isCustomDays && <span className="font-mono text-[10px]">{days}d</span>}
-                <Pencil className="w-2.5 h-2.5" />
-              </button>
-
-              {/* Custom Days Popover */}
-              {showCustomModal && (
-                <div className="absolute right-0 top-full mt-1.5 z-30 w-48 rounded-lg border border-slate-200 bg-white p-2.5 shadow-lg animate-in fade-in zoom-in-95 duration-100">
-                  <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-100">
-                    <span className="text-[11px] font-semibold text-slate-800">Custom Window</span>
-                    <button
-                      onClick={() => setShowCustomModal(false)}
-                      className="text-slate-400 hover:text-slate-600 p-0.5"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                  <div className="space-y-2">
-                    <input
-                      type="number"
-                      min="1"
-                      max="90"
-                      value={customInputValue}
-                      onChange={(e) => setCustomInputValue(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleApplyCustomDays()}
-                      className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 font-mono"
-                      placeholder="e.g. 14"
-                      autoFocus
-                    />
-                    <div className="flex items-center gap-1">
-                      {[5, 14, 30].map((preset) => (
-                        <button
-                          key={preset}
-                          type="button"
-                          onClick={() => setCustomInputValue(String(preset))}
-                          className="flex-1 py-0.5 text-[10px] font-mono rounded bg-slate-100 text-slate-700 hover:bg-slate-200"
-                        >
-                          {preset}d
-                        </button>
-                      ))}
-                    </div>
-                    <button
-                      onClick={handleApplyCustomDays}
-                      className="w-full py-1 text-xs font-semibold text-white bg-slate-900 hover:bg-black rounded transition-colors flex items-center justify-center gap-1"
-                    >
-                      <Check className="w-3 h-3" />
-                      Apply
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Export CSV button */}
-            <button
-              onClick={handleExportCSV}
-              title="Export CSV"
-              className="h-6 w-6 rounded border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-100 flex items-center justify-center transition-colors"
-            >
-              <Download className="w-3 h-3" />
-            </button>
           </div>
         </div>
       </div>
@@ -523,26 +855,44 @@ export function MovementTrackerCard({
               ))
             ) : (
               <tr>
-                <td colSpan={5} className="py-8 px-3 text-center">
+                <td colSpan={5} className="py-14 px-4 text-center">
                   <div className="flex flex-col items-center justify-center max-w-xs mx-auto">
-                    <AlertCircle className="w-4 h-4 text-slate-400 mb-1" />
+                    <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-2">
+                      <AlertCircle className="w-4 h-4" />
+                    </div>
                     <h4 className="text-xs font-semibold text-slate-700">
                       {searchQuery || selectedCategory !== "ALL"
                         ? `No ${isOutward ? "outward" : "inward"} materials match filters`
-                        : `No ${isOutward ? "outward" : "inward"} activity in this ${days}d window`}
+                        : `No ${isOutward ? "outward" : "inward"} activity for ${isRange ? `${formatDate(selectedStartDate)} → ${formatDate(selectedEndDate)}` : formatDate(selectedStartDate)}`}
                     </h4>
-                    {(searchQuery || selectedCategory !== "ALL") && (
-                      <button
-                        onClick={() => {
-                          setSearchQuery("");
-                          setSelectedCategory("ALL");
-                        }}
-                        className="mt-2 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded transition-colors flex items-center gap-1"
-                      >
-                        <RotateCcw className="w-3 h-3" />
-                        Reset
-                      </button>
-                    )}
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      {searchQuery || selectedCategory !== "ALL"
+                        ? "Try clearing filters to see all materials."
+                        : "No transactions were recorded on this date."}
+                    </p>
+                    <div className="flex items-center gap-2 mt-3">
+                      {(searchQuery || selectedCategory !== "ALL") && (
+                        <button
+                          onClick={() => {
+                            setSearchQuery("");
+                            setSelectedCategory("ALL");
+                          }}
+                          className="px-2.5 py-1 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded transition-colors flex items-center gap-1"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          Reset Filters
+                        </button>
+                      )}
+                      {isDateChanged && (
+                        <button
+                          onClick={handleResetToDefault}
+                          className="px-2.5 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/80 rounded transition-colors flex items-center gap-1"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          Reset to Yesterday
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </td>
               </tr>
@@ -551,73 +901,88 @@ export function MovementTrackerCard({
         </table>
       </div>
 
-      {/* 5. Footer with Expand to 10 rows toggle icon and side pagination buttons */}
-      {filteredItems.length > 0 && (
-        <div className="px-3 py-2 border-t border-slate-100 bg-slate-50/40 flex items-center justify-between text-xs text-slate-500 mt-auto">
-          {/* Left: Item range and Expand to 10 icon button */}
-          <div className="flex items-center gap-2">
-            <span className="text-[11px]">
-              <span className="font-semibold text-slate-800">
-                {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filteredItems.length)}
-              </span>{" "}
-              of <span className="font-semibold text-slate-800">{filteredItems.length}</span>
-            </span>
+      {/* 5. Standardized Card Footer */}
+      <div className="px-3 py-2 border-t border-slate-100 bg-slate-50/40 flex items-center justify-between text-xs text-slate-500 mt-auto min-h-[36px] rounded-b-lg">
+        {filteredItems.length > 0 ? (
+          <>
+            {/* Left: Item range and Expand to 14 icon button */}
+            <div className="flex items-center gap-2">
+              <span className="text-[11px]">
+                <span className="font-semibold text-slate-800">
+                  {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filteredItems.length)}
+                </span>{" "}
+                of <span className="font-semibold text-slate-800">{filteredItems.length}</span>
+              </span>
 
-            {filteredItems.length > 5 && (
+              {filteredItems.length > 7 && (
+                <button
+                  onClick={() => {
+                    setIsExpandedTo14(!isExpandedTo14);
+                    setCurrentPage(1);
+                  }}
+                  className={cn(
+                    "h-5 px-1.5 rounded border text-[10px] font-semibold flex items-center gap-1 transition-all",
+                    isExpandedTo14
+                      ? "bg-slate-200/90 text-slate-800 border-slate-300 hover:bg-slate-300"
+                      : "bg-white text-slate-600 border-slate-200/90 hover:bg-slate-50 hover:text-slate-900"
+                  )}
+                  title={isExpandedTo14 ? "Collapse to 7 rows" : "Expand to 14 rows"}
+                >
+                  {isExpandedTo14 ? (
+                    <>
+                      <ChevronUp className="w-2.5 h-2.5 text-slate-600" />
+                      <span>7 rows</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-2.5 h-2.5 text-slate-600" />
+                      <span>14 rows</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+
+            {/* Right: Side Next and Prev Navigation Buttons */}
+            {filteredItems.length > pageSize && (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="h-6 px-1.5 rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center transition-colors font-medium"
+                  title="Previous page"
+                >
+                  <ChevronLeft className="w-3 h-3" />
+                </button>
+                <span className="text-[11px] px-1 font-mono text-slate-500">
+                  {currentPage}/{totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="h-6 px-1.5 rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center transition-colors font-medium"
+                  title="Next page"
+                >
+                  <ChevronRight className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <span className="text-[11px] text-slate-400">0 items listed</span>
+            {isDateChanged && (
               <button
-                onClick={() => {
-                  setIsExpandedTo10(!isExpandedTo10);
-                  setCurrentPage(1);
-                }}
-                className={cn(
-                  "h-5 px-1.5 rounded border text-[10px] font-semibold flex items-center gap-1 transition-all",
-                  isExpandedTo10
-                    ? "bg-slate-200/90 text-slate-800 border-slate-300 hover:bg-slate-300"
-                    : "bg-white text-slate-600 border-slate-200/90 hover:bg-slate-50 hover:text-slate-900"
-                )}
-                title={isExpandedTo10 ? "Collapse to 5 rows" : "Expand to 10 rows"}
+                onClick={handleResetToDefault}
+                className="text-[11px] text-indigo-600 hover:underline flex items-center gap-1 font-medium"
               >
-                {isExpandedTo10 ? (
-                  <>
-                    <ChevronUp className="w-2.5 h-2.5 text-slate-600" />
-                    <span>5 rows</span>
-                  </>
-                ) : (
-                  <>
-                    <ChevronDown className="w-2.5 h-2.5 text-slate-600" />
-                    <span>10 rows</span>
-                  </>
-                )}
+                <RotateCcw className="w-2.5 h-2.5" />
+                Reset to default date
               </button>
             )}
-          </div>
-
-          {/* Right: Side Next and Prev Navigation Buttons */}
-          {filteredItems.length > pageSize && (
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="h-6 px-1.5 rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center transition-colors font-medium"
-                title="Previous page"
-              >
-                <ChevronLeft className="w-3 h-3" />
-              </button>
-              <span className="text-[11px] px-1 font-mono text-slate-500">
-                {currentPage}/{totalPages}
-              </span>
-              <button
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="h-6 px-1.5 rounded border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center transition-colors font-medium"
-                title="Next page"
-              >
-                <ChevronRight className="w-3 h-3" />
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

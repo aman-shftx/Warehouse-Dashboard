@@ -13,6 +13,7 @@ import {
   AlertsState
 } from "@/types";
 import { calculateAlertsMetrics } from "@/lib/alerts-engine";
+import { getInventoryMovement } from "@/lib/movement";
 import { unstable_cache, revalidateTag } from "next/cache";
 
 let cachedData: { data: ExecutiveOverviewData; expiresAt: number } | null = null;
@@ -31,10 +32,10 @@ const getCachedIntelligence = unstable_cache(
   async () => {
     return await computeWarehouseIntelligence();
   },
-  ["warehouse-intelligence-data"],
+  ["warehouse-intelligence-v2"],
   {
     tags: ["warehouse-intelligence"],
-    revalidate: 3600, // 1 hour fallback; purged immediately on sync/actions
+    revalidate: 60,
   }
 );
 
@@ -142,44 +143,13 @@ async function computeWarehouseIntelligence(): Promise<ExecutiveOverviewData> {
     }
   });
 
-  // 6. Calculate yesterday's outward & inward velocity metrics
-  const yesterdayStr = past30Days[1];
-  let outwardYesterdaySkus = 0;
-  let outwardYesterdayQty = 0;
-
-  let targetOutwardDay = yesterdayStr;
-  let dayOutward = allOutward30d.filter((r) => r.date.startsWith(targetOutwardDay));
-  if (dayOutward.length === 0 && latestOutwardDate) {
-    targetOutwardDay = latestOutwardDate.substring(0, 10);
-    dayOutward = allOutward30d.filter((r) => r.date.startsWith(targetOutwardDay));
-  }
-
-  const daySkuSet = new Set<string>();
-  dayOutward.forEach((r) => {
-    daySkuSet.add(prodOldMap.get(r.sku_code) || r.sku_code);
-    outwardYesterdayQty += r.quantity || 0;
-  });
-  outwardYesterdaySkus = daySkuSet.size;
-
-  // Latest day inward receipts
-  const latestInwardDayStr = latestInwardDate ? latestInwardDate.substring(0, 10) : null;
-  let inwardYesterdaySkus = 0;
-  let inwardYesterdayQty = 0;
-
-  if (latestInwardDayStr) {
-    const { data: dayInward } = await supabaseAdmin
-      .from("inward_transactions")
-      .select("sku_code, quantity")
-      .gte("date", `${latestInwardDayStr}T00:00:00.000Z`)
-      .lte("date", `${latestInwardDayStr}T23:59:59.999Z`);
-
-    const inSkuSet = new Set<string>();
-    (dayInward || []).forEach((r) => {
-      inSkuSet.add(prodOldMap.get(r.sku_code) || r.sku_code);
-      inwardYesterdayQty += r.quantity || 0;
-    });
-    inwardYesterdaySkus = inSkuSet.size;
-  }
+  // 6. Calculate yesterday's outward & inward velocity metrics from Inventory Movement (Single Source of Truth)
+  const movement1d = await getInventoryMovement(1);
+  const outwardYesterdaySkus = movement1d.outward.totalSkus;
+  const outwardYesterdayQty = movement1d.outward.totalQty;
+  const inwardYesterdaySkus = movement1d.inward.totalSkus;
+  const inwardYesterdayQty = movement1d.inward.totalQty;
+  const movementLatestDate = movement1d.latestDate;
 
   // 7. Calculate ABC Classification
   const getSkuOutward = (sku: string, days: number) => {
@@ -496,7 +466,7 @@ async function computeWarehouseIntelligence(): Promise<ExecutiveOverviewData> {
     totalDeficitUnits: alertsMetrics.totalReorderDeficitUnits,
     avgDaysOfStock,
     latestStockDate,
-    latestOutwardDate,
+    latestOutwardDate: movementLatestDate || latestOutwardDate,
     outwardYesterdaySkus,
     outwardYesterdayQty,
     inwardYesterdaySkus,

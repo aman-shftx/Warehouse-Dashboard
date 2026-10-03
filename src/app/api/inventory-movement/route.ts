@@ -5,12 +5,22 @@ export const revalidate = 60; // Cache 60s
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const daysParam = searchParams.get("days") || "1";
-  const parsed = parseInt(daysParam, 10);
-  const numDays = Math.min(90, Math.max(1, isNaN(parsed) ? 1 : parsed));
+  const dateParam = searchParams.get("date");
+  const startParam = searchParams.get("startDate");
+  const endParam = searchParams.get("endDate");
+  const daysParam = searchParams.get("days");
 
   try {
-    const data = await getInventoryMovement(numDays);
+    let data;
+    if (dateParam) {
+      data = await getInventoryMovement({ date: dateParam });
+    } else if (startParam && endParam) {
+      data = await getInventoryMovement({ startDate: startParam, endDate: endParam });
+    } else {
+      const parsed = parseInt(daysParam || "1", 10);
+      const numDays = Math.min(90, Math.max(1, isNaN(parsed) ? 1 : parsed));
+      data = await getInventoryMovement({ days: numDays });
+    }
     return NextResponse.json(data);
   } catch (err: any) {
     console.error("Error computing inventory movement:", err);

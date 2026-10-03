@@ -40,26 +40,28 @@ export function MovementDashboard({ initialData }: Props) {
       </div>
 
       {/* 2. Side-by-Side: Outward on Left, Inward on Right */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
         {/* Outward Tracker (Left) */}
-        <div className={typeFilter === "outward" ? "ring-2 ring-indigo-500 rounded-lg" : ""}>
+        <div className="h-full flex flex-col">
           <MovementTrackerCard
             type="outward"
             initialData={initialData.outward}
             initialDays={initialData.days}
             latestDate={initialData.latestDate}
             prevDate={initialData.prevDate}
+            highlighted={typeFilter === "outward"}
           />
         </div>
 
         {/* Inward Tracker (Right) */}
-        <div className={typeFilter === "inward" ? "ring-2 ring-emerald-500 rounded-lg" : ""}>
+        <div className="h-full flex flex-col">
           <MovementTrackerCard
             type="inward"
             initialData={initialData.inward}
             initialDays={initialData.days}
             latestDate={initialData.latestDate}
             prevDate={initialData.prevDate}
+            highlighted={typeFilter === "inward"}
           />
         </div>
       </div>

@@ -1,10 +1,15 @@
 import { fetchSheetValues } from "@/lib/google-sheets/client";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
+const MONTH_NAMES_MAP: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12
+};
+
 // Helper: Normalize date string from Google Sheet to YYYY-MM-DD
 export function parseSheetDate(rawDate: string): string | null {
   if (!rawDate) return null;
-  const trimmed = rawDate.trim();
+  const trimmed = String(rawDate).trim();
   if (!trimmed || trimmed.toLowerCase().includes("कुल") || trimmed.toLowerCase().includes("total")) {
     return null;
   }
@@ -12,6 +17,19 @@ export function parseSheetDate(rawDate: string): string | null {
   // Handle ISO format: YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
     return trimmed.substring(0, 10);
+  }
+
+  // Handle DD-MMM-YYYY or D-MMM-YYYY (e.g. "1-Oct-2026", "2-Oct-2026", "02-Oct-2026")
+  const mmmMatch = trimmed.match(/^(\d{1,2})[-/ ]([A-Za-z]{3,})[-/ ](\d{2,4})/);
+  if (mmmMatch) {
+    const day = parseInt(mmmMatch[1], 10);
+    const monStr = mmmMatch[2].toLowerCase().slice(0, 3);
+    const month = MONTH_NAMES_MAP[monStr];
+    let year = parseInt(mmmMatch[3], 10);
+    if (year < 100) year += 2000;
+    if (month && !isNaN(day) && !isNaN(year)) {
+      return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    }
   }
 
   // Handle DD/MM/YYYY or D/M/YYYY or DD-MM-YYYY
@@ -24,25 +42,21 @@ export function parseSheetDate(rawDate: string): string | null {
     if (isNaN(year)) return null;
     if (year < 100) year += 2000;
 
-    // Detect if p1 is day or month (Indian sheets typically use DD/MM/YYYY)
-    // If p1 > 12, p1 is definitely day
+    // Detect if parts[1] is a month name
+    const mon1 = parts[1].toLowerCase().slice(0, 3);
+    if (MONTH_NAMES_MAP[mon1]) {
+      p2 = MONTH_NAMES_MAP[mon1];
+    }
+
+    if (isNaN(p1) || isNaN(p2)) return null;
+
+    // Detect if p1 is day or month (Indian sheets standard is DD/MM/YYYY)
     let day = p1;
     let month = p2;
     if (p2 > 12 && p1 <= 12) {
       // MM/DD/YYYY format
       day = p2;
       month = p1;
-    }
-
-    // Guard against future dates caused by MM/DD/YYYY inversion (e.g. 04/10/2026 entered for April 10)
-    const now = new Date();
-    const candidateDate = new Date(year, month - 1, day);
-    if (candidateDate > now && p1 <= 12 && p2 <= 12) {
-      const swappedDate = new Date(year, p1 - 1, p2);
-      if (swappedDate <= now) {
-        month = p1;
-        day = p2;
-      }
     }
 
     const mm = String(month).padStart(2, "0");

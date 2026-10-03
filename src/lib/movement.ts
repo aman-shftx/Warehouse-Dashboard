@@ -10,7 +10,7 @@ export interface MovementItem {
   current_stock: number;
   prev_stock: number;
   sourcing: string;
-  trend: number[]; // Daily stock level history from prevDate to latestDate
+  trend: number[]; // Daily stock level history
 }
 
 export interface MovementSectionData {
@@ -28,201 +28,258 @@ export interface MovementDataResponse {
   inward: MovementSectionData;
 }
 
+export interface MovementFilterOptions {
+  days?: number;
+  startDate?: string;
+  endDate?: string;
+  date?: string; // single date
+}
+
 export function invalidateInventoryMovementCache() {
   try {
     revalidateTag("movement-data");
   } catch (e) {}
 }
 
-const getCachedInventoryMovement = (days: number) =>
-  unstable_cache(
-    async () => computeInventoryMovement(days),
-    [`movement-data-${days}`],
+export async function getInventoryMovement(
+  filter?: number | MovementFilterOptions
+): Promise<MovementDataResponse> {
+  const options: MovementFilterOptions =
+    typeof filter === "number" ? { days: filter } : (filter || { days: 1 });
+
+  let cacheKey = "1d";
+  if (options.date) {
+    cacheKey = `date-${options.date}`;
+  } else if (options.startDate && options.endDate) {
+    cacheKey = `range-${options.startDate}-${options.endDate}`;
+  } else if (options.days) {
+    cacheKey = `days-${options.days}`;
+  }
+
+  return unstable_cache(
+    async () => computeInventoryMovement(options),
+    [`movement-data-${cacheKey}`],
     {
-      tags: ["movement-data", `movement-data-${days}`],
-      revalidate: 3600,
+      tags: ["movement-data", `movement-data-${cacheKey}`],
+      revalidate: 300,
     }
   )();
-
-export async function getInventoryMovement(days: number = 1): Promise<MovementDataResponse> {
-  const numDays = Math.min(90, Math.max(1, days));
-  return getCachedInventoryMovement(numDays);
 }
 
-async function computeInventoryMovement(days: number): Promise<MovementDataResponse> {
-  const numDays = Math.max(1, days);
+// Helper: Fetch all transactions within a date range with automatic pagination
+async function fetchTransactionsInRange(
+  table: "inward_transactions" | "outward_transactions",
+  startIso: string,
+  endIso: string
+): Promise<{ sku_code: string; quantity: number; date: string }[]> {
+  const rows: { sku_code: string; quantity: number; date: string }[] = [];
+  let offset = 0;
+  const PAGE_SIZE = 1000;
 
-  // 1. Get the latest available recorded date
-  const { data: latestRow, error: latestErr } = await supabaseAdmin
-    .from("daily_stock")
-    .select("date")
-    .order("date", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  while (true) {
+    const { data, error } = await supabaseAdmin
+      .from(table)
+      .select("sku_code, quantity, date")
+      .gte("date", startIso)
+      .lte("date", endIso)
+      .order("id", { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
 
-  if (latestErr || !latestRow?.date) {
+    if (error || !data || data.length === 0) break;
+    rows.push(...data);
+    if (data.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+
+  return rows;
+}
+
+async function computeInventoryMovement(options: MovementFilterOptions): Promise<MovementDataResponse> {
+  // 1. Determine reporting date with T-1 delay or custom single date / range
+  const formatter = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" });
+  const todayIST = formatter.format(new Date());
+  const d = new Date(todayIST + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() - 1);
+  const defaultYesterday = formatter.format(d);
+
+  let startDate: string;
+  let endDate: string;
+  let numDays: number;
+
+  if (options.date && /^\d{4}-\d{2}-\d{2}$/.test(options.date)) {
+    startDate = options.date;
+    endDate = options.date;
+    numDays = 1;
+  } else if (
+    options.startDate &&
+    options.endDate &&
+    /^\d{4}-\d{2}-\d{2}$/.test(options.startDate) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(options.endDate)
+  ) {
+    if (options.startDate <= options.endDate) {
+      startDate = options.startDate;
+      endDate = options.endDate;
+    } else {
+      startDate = options.endDate;
+      endDate = options.startDate;
+    }
+    const diffMs =
+      new Date(endDate + "T12:00:00Z").getTime() - new Date(startDate + "T12:00:00Z").getTime();
+    numDays = Math.max(1, Math.round(diffMs / 86400000) + 1);
+  } else {
+    numDays = Math.min(90, Math.max(1, options.days || 1));
+    const { data: latestStockRow } = await supabaseAdmin
+      .from("daily_stock")
+      .select("date")
+      .lte("date", defaultYesterday)
+      .order("date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    endDate = latestStockRow?.date || defaultYesterday;
+    const startD = new Date(endDate + "T12:00:00Z");
+    startD.setUTCDate(startD.getUTCDate() - (numDays - 1));
+    startDate = formatter.format(startD);
+  }
+
+  const startIso = `${startDate}T00:00:00.000Z`;
+  const endIso = `${endDate}T23:59:59.999Z`;
+
+  // 2. Concurrently fetch Inward & Outward transactions, products catalog, and current stock view
+  const [inwardTxs, outwardTxs, { data: products }, { data: stockView }] = await Promise.all([
+    fetchTransactionsInRange("inward_transactions", startIso, endIso),
+    fetchTransactionsInRange("outward_transactions", startIso, endIso),
+    supabaseAdmin.from("products").select("sku_code, old_sku_code, product_name, brand, category, sourcing"),
+    supabaseAdmin.from("v_current_stock").select("sku_code, current_stock"),
+  ]);
+
+  // 3. Build product and canonical SKU mappings
+  const prodMap = new Map<string, any>();
+  const oldToCanonical = new Map<string, string>();
+  (products || []).forEach((p) => {
+    if (p.sku_code) {
+      prodMap.set(p.sku_code, p);
+      if (p.old_sku_code) {
+        oldToCanonical.set(p.old_sku_code, p.sku_code);
+        prodMap.set(p.old_sku_code, p);
+      }
+    }
+  });
+
+  const currentStockMap = new Map<string, number>();
+  (stockView || []).forEach((r) => {
+    currentStockMap.set(r.sku_code, r.current_stock || 0);
+  });
+
+  // 4. Aggregate unique SKUs and their total quantities
+  function aggregateTxs(
+    txs: { sku_code: string; quantity: number; date: string }[],
+    type: "inward" | "outward"
+  ): { totalSkus: number; totalQty: number; items: MovementItem[] } {
+    const skuQtyMap = new Map<string, number>();
+
+    txs.forEach((tx) => {
+      const canonicalSku = oldToCanonical.get(tx.sku_code) || tx.sku_code;
+      const qty = tx.quantity || 0;
+      skuQtyMap.set(canonicalSku, (skuQtyMap.get(canonicalSku) || 0) + qty);
+    });
+
+    const items: MovementItem[] = [];
+    skuQtyMap.forEach((qty, skuCode) => {
+      const prod = prodMap.get(skuCode);
+      const curr = currentStockMap.get(skuCode) ?? 0;
+      const prev = type === "outward" ? curr + qty : Math.max(0, curr - qty);
+
+      items.push({
+        sku: skuCode,
+        name: prod?.product_name || skuCode,
+        brand: prod?.brand || "GENERIC",
+        category: prod?.category || "UNCATEGORIZED",
+        sourcing: prod?.sourcing || "MARKET",
+        change_qty: qty,
+        current_stock: curr,
+        prev_stock: prev,
+        trend: [],
+      });
+    });
+
+    // Sort descending by movement quantity
+    items.sort((a, b) => b.change_qty - a.change_qty);
+    const totalQty = items.reduce((acc, item) => acc + item.change_qty, 0);
+
     return {
-      latestDate: null,
-      prevDate: null,
-      days: numDays,
-      delayDays: 1,
-      outward: { totalSkus: 0, totalQty: 0, items: [] },
-      inward: { totalSkus: 0, totalQty: 0, items: [] },
+      totalSkus: items.length,
+      totalQty,
+      items,
     };
   }
 
-  const latestDate = latestRow.date;
+  const inwardResult = aggregateTxs(inwardTxs, "inward");
+  const outwardResult = aggregateTxs(outwardTxs, "outward");
 
-  // 2. Find closest date <= (latestDate - numDays)
-  const targetDateObj = new Date(latestDate);
-  targetDateObj.setDate(targetDateObj.getDate() - numDays);
-  const targetDateStr = targetDateObj.toISOString().split("T")[0];
+  // 5. Fetch 14-day stock trend for moving SKUs
+  const allMovingSkus = Array.from(
+    new Set([
+      ...inwardResult.items.map((i) => i.sku),
+      ...outwardResult.items.map((i) => i.sku),
+    ])
+  );
 
-  const { data: prevRow } = await supabaseAdmin
-    .from("daily_stock")
-    .select("date")
-    .lte("date", targetDateStr)
-    .order("date", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const prevDate = prevRow?.date || targetDateStr;
-
-  // 3. Fetch stock records for both dates and all product info
-  const [{ data: stockLatest }, { data: stockPrev }, { data: products }] = await Promise.all([
-    supabaseAdmin.from("daily_stock").select("sku_code, quantity").eq("date", latestDate),
-    supabaseAdmin.from("daily_stock").select("sku_code, quantity").eq("date", prevDate),
-    supabaseAdmin.from("products").select("sku_code, old_sku_code, product_name, brand, category, sourcing"),
-  ]);
-
-  // 4. Map products
-  const prodMap = new Map<string, any>();
-  (products || []).forEach((p) => {
-    if (p.sku_code) prodMap.set(p.sku_code, p);
-    if (p.old_sku_code) prodMap.set(p.old_sku_code, p);
-  });
-
-  const prevMap = new Map<string, number>();
-  (stockPrev || []).forEach((r) => prevMap.set(r.sku_code, r.quantity || 0));
-
-  const latestMap = new Map<string, number>();
-  (stockLatest || []).forEach((r) => latestMap.set(r.sku_code, r.quantity || 0));
-
-  const allSkus = new Set([...Array.from(prevMap.keys()), ...Array.from(latestMap.keys())]);
-
-  // 5. Fetch daily trend for moving SKUs (last 14 days by default)
-  const movingSkus = Array.from(allSkus).filter((sku) => {
-    const p = prevMap.get(sku) ?? 0;
-    const c = latestMap.get(sku) ?? 0;
-    return p !== c;
-  });
-
-  const skuTrendMap = new Map<string, number[]>();
-  if (movingSkus.length > 0) {
+  if (allMovingSkus.length > 0) {
     const trendDays = Math.max(14, numDays);
-    const trendStartObj = new Date(latestDate);
-    trendStartObj.setDate(trendStartObj.getDate() - trendDays);
-    const trendStartDate = trendStartObj.toISOString().split("T")[0];
+    const trendStartD = new Date(endDate + "T12:00:00Z");
+    trendStartD.setUTCDate(trendStartD.getUTCDate() - trendDays);
+    const trendStartDate = formatter.format(trendStartD);
 
-    const batches = [];
-    for (let i = 0; i < movingSkus.length; i += 50) {
-      batches.push(movingSkus.slice(i, i + 50));
+    const skuTrendMap = new Map<string, number[]>();
+    const batches: string[][] = [];
+    for (let i = 0; i < allMovingSkus.length; i += 50) {
+      batches.push(allMovingSkus.slice(i, i + 50));
     }
-    const results = await Promise.all(
+
+    const trendResults = await Promise.all(
       batches.map((batch) =>
         supabaseAdmin
           .from("daily_stock")
           .select("sku_code, date, quantity")
           .in("sku_code", batch)
           .gte("date", trendStartDate)
-          .lte("date", latestDate)
+          .lte("date", endDate)
           .order("date", { ascending: true })
       )
     );
-    results.forEach(({ data: rows }) => {
+
+    trendResults.forEach(({ data: rows }) => {
       (rows || []).forEach((r) => {
         if (!skuTrendMap.has(r.sku_code)) skuTrendMap.set(r.sku_code, []);
         skuTrendMap.get(r.sku_code)!.push(r.quantity || 0);
       });
     });
+
+    // Assign trend to items
+    const enrichTrend = (items: MovementItem[]) => {
+      items.forEach((item) => {
+        const raw = skuTrendMap.get(item.sku) || [];
+        if (raw.length >= 2) {
+          item.trend = raw;
+        } else if (raw.length === 1) {
+          item.trend = [item.prev_stock, raw[0]];
+        } else {
+          item.trend = [item.prev_stock, item.current_stock];
+        }
+      });
+    };
+
+    enrichTrend(inwardResult.items);
+    enrichTrend(outwardResult.items);
   }
 
-  const outwardItems: MovementItem[] = [];
-  const inwardItems: MovementItem[] = [];
-
-  allSkus.forEach((sku) => {
-    const prevQty = prevMap.get(sku) ?? 0;
-    const currQty = latestMap.get(sku) ?? 0;
-    const diff = currQty - prevQty;
-    const prod = prodMap.get(sku);
-
-    const category = prod?.category || "UNCATEGORIZED";
-    const brand = prod?.brand || "GENERIC";
-    const name = prod?.product_name || sku;
-    const skuCode = prod?.sku_code || sku;
-    const sourcing = prod?.sourcing || "MARKET";
-    const rawTrend = skuTrendMap.get(skuCode) || skuTrendMap.get(sku) || [];
-    let trend: number[];
-    if (rawTrend.length >= 2) {
-      trend = rawTrend;
-    } else if (rawTrend.length === 1) {
-      trend = [prevQty, rawTrend[0]];
-    } else {
-      trend = [prevQty, currQty];
-    }
-
-    if (diff < 0) {
-      // Outward: quantity decreased from last date to today
-      // Dispatched Qty = last date qty - today's date qty
-      outwardItems.push({
-        category,
-        brand,
-        name,
-        sku: skuCode,
-        change_qty: prevQty - currQty,
-        current_stock: currQty,
-        prev_stock: prevQty,
-        sourcing,
-        trend,
-      });
-    } else if (diff > 0) {
-      // Inward: quantity increased
-      // Inward Qty = today's date qty - last date qty
-      inwardItems.push({
-        category,
-        brand,
-        name,
-        sku: skuCode,
-        change_qty: currQty - prevQty,
-        current_stock: currQty,
-        prev_stock: prevQty,
-        sourcing,
-        trend,
-      });
-    }
-  });
-
-  // Sort descending by movement quantity
-  outwardItems.sort((a, b) => b.change_qty - a.change_qty);
-  inwardItems.sort((a, b) => b.change_qty - a.change_qty);
-
-  const totalOutwardQty = outwardItems.reduce((acc, item) => acc + item.change_qty, 0);
-  const totalInwardQty = inwardItems.reduce((acc, item) => acc + item.change_qty, 0);
-
   return {
-    latestDate,
-    prevDate,
+    latestDate: endDate,
+    prevDate: startDate,
     days: numDays,
     delayDays: 1, // T-1 reporting delay note
-    outward: {
-      totalSkus: outwardItems.length,
-      totalQty: totalOutwardQty,
-      items: outwardItems,
-    },
-    inward: {
-      totalSkus: inwardItems.length,
-      totalQty: totalInwardQty,
-      items: inwardItems,
-    },
+    outward: outwardResult,
+    inward: inwardResult,
   };
 }

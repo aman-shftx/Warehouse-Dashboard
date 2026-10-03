@@ -31,9 +31,9 @@ export function OverviewMovementDashboard({ initialData }: Props) {
       </div>
 
       {/* 2. Side-by-Side: Outward on Left, Inward on Right */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
         {/* Outward Tracker (Left) */}
-        <div>
+        <div className="h-full flex flex-col">
           <MovementTrackerCard
             type="outward"
             initialData={initialData.outward}
@@ -44,7 +44,7 @@ export function OverviewMovementDashboard({ initialData }: Props) {
         </div>
 
         {/* Inward Tracker (Right) */}
-        <div>
+        <div className="h-full flex flex-col">
           <MovementTrackerCard
             type="inward"
             initialData={initialData.inward}
